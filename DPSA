@@ -336,7 +336,8 @@ ROTATE ()
 }	
 
 
-function SAC2MSEED {
+SAC2MSEED ()
+{
 	for data in `ls ./*$SAC`; do
 	STA=`saclst KSTNM f $data   | awk '{print $2}'`
 	CMP=`saclst KCMPNM f $data  | awk '{print $2}'`
