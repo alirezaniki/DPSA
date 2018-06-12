@@ -399,7 +399,7 @@ MERGE ()
 	
 	Name=`zenity --forms --title="Merge Question" --text="Please enter a name to save merged data" --add-entry="Enter Name" 2> /dev/null`	
 	
-	if [ -n $Name ]; then
+	if [ "${#NAME[@]}" -eq "1" ]; then
 		if [ ! -d $MERGE/$Name ]; then
 			mkdir $MERGE/$Name 
 		else
