@@ -28,7 +28,7 @@ PLOT="$DPSA_HOME/PLOT"
 BACKUP="$DPSA_HOME/BACKUP"
 MERGE="$DPSA_HOME/MERGE"
 PYROCKO="$DPSA_HOME/PYROCKO"
-GFZ_DATA="$DPSA_HOME/GFZ_DATA"
+DATA_QUERY="$DPSA_HOME/DATA_QUERY"
 SYNTHETIC="$DPSA_HOME/SYNTHETIC"
 EVE_SEARCH="$DPSA_HOME/EVE_SEARCH"
 SHIFT_DATA="$DPSA_HOME/SHIFT_DATA"
@@ -90,7 +90,7 @@ CONF_FILE ()
 
 BUILD_TREE ()
 {
-	for dir in "INPUT" "RESP" "MERGE" "PLOT" "BACKUP" "EVE_SEARCH" "SYNTHETIC" "GFZ_DATA" "PYROCKO" "SHIFT_DATA" ; do
+	for dir in "INPUT" "RESP" "MERGE" "PLOT" "BACKUP" "EVE_SEARCH" "SYNTHETIC" "DATA_QUERY" "PYROCKO" "SHIFT_DATA" ; do
 		[ ! -d $dir ] && mkdir $dir && echo "${dir##*/} directory created ..." >> $LOG_FILE
 	done	
 	
@@ -518,7 +518,7 @@ MAP ()
 
 DATA_QUERY ()
 {
-	cd $GFZ_DATA
+	cd $DATA_QUERY
 	[ ! -f $PYROCKO/catalog_search.py ] &&
 		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 
@@ -573,6 +573,7 @@ DATA_QUERY ()
 		rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
 	
 	else	
+	
 	
 		unset LIS
 		for ((i=1; i <= "$ev_num"; i++)); do
