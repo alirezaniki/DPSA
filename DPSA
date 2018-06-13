@@ -916,11 +916,10 @@ HUDSON_DIAG ()
 		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 		
 	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
-		--add-entry="Event Magnitude" --add-entry="MT Components Mnn/Mee/Mdd" --add-entry="MT Components Mne/Mnd/Med" 2> /dev/null`
+		--add-entry="MT Components Mnn/Mee/Mdd" --add-entry="MT Components Mne/Mnd/Med" 2> /dev/null`
 	
-	MAG=`echo ${INFO[@]}  | cut -f 1 -d " "`
-	MOM1=`echo ${INFO[@]} | cut -f 2 -d " "`
-	MOM2=`echo ${INFO[@]} | cut -f 3 -d " "`
+	MOM1=`echo ${INFO[@]} | cut -f 1 -d " "`
+	MOM2=`echo ${INFO[@]} | cut -f 2 -d " "`
 	Mnn=`echo $MOM1 | cut -f 1 -d "/"`
 	Mee=`echo $MOM1 | cut -f 2 -d "/"`
 	Mdd=`echo $MOM1 | cut -f 3 -d "/"`
@@ -928,16 +927,15 @@ HUDSON_DIAG ()
 	Mnd=`echo $MOM2 | cut -f 2 -d "/"`
 	Med=`echo $MOM2 | cut -f 3 -d "/"`
 	
-	[ "${#INFO[@]}" -ne "3" ] &&
+	[ "${#INFO[@]}" -ne "2" ] &&
 		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 	
-	sed -i "/magnitude =/c\magnitude = $MAG" $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/mnn =/c\    mnn = $Mnn*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/mee =/c\    mee = $Mee*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/mdd =/c\    mdd = $Mdd*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/mne =/c\    mne = $Mne*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/mnd =/c\    mnd = $Mnd*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/med =/c\    med = $Med*exp)" $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mnn =/c\    mnn = $Mnn," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mee =/c\    mee = $Mee," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mdd =/c\    mdd = $Mdd," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mne =/c\    mne = $Mne," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mnd =/c\    mnd = $Mnd," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/med =/c\    med = $Med)" $PYROCKO/hudson_diagram.py 2> /dev/null
 
 	python $PYROCKO/hudson_diagram.py
 }
