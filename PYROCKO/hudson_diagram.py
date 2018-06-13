@@ -4,18 +4,13 @@ from pyrocko.plot import hudson, beachball, mpl_init, mpl_color
 from pyrocko import moment_tensor as mtm
 import sys
 
-magnitude = 6.3
-
-exp = mtm.magnitude_to_moment(magnitude)  
-
 m = mtm.MomentTensor(
-    mnn = 2.34*exp,
-    mee = -2.64*exp,
-    mdd = 0.295*exp,
-    mne = 1.49*exp,
-    mnd = 0.182*exp,
-    med = -0.975*exp)
-
+    mnn = 2.31,
+    mee = -2.63,
+    mdd = 0.395,
+    mne = 1.69,
+    mnd = 0.232,
+    med = -0.935)
 
 # setup plot layout
 
