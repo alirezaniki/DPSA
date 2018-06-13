@@ -571,10 +571,7 @@ DATA_QUERY ()
 		
 		SITE="geofon,iris"
 		rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
-	
 	else	
-	
-	
 		unset LIS
 		for ((i=1; i <= "$ev_num"; i++)); do
 			EVE=`grep -m $i -A 7 'pf.Event' .events.info | tail -7`
