@@ -126,7 +126,7 @@ DATA_ANALYSIS ()
 {
 	cd $INPUT
 	[ -z "$( ls ./*$SAC 2> /dev/null )" ] && 
-		zenity --error --title="Input Error" --text="No input data available." --width=160 2> /dev/null && break 1		
+		zenity --error --title="Input Error" --text="No input data available." --width=160 2> /dev/null && continue	
 	
 	# Backup process
 	[ "$KEEP_PRE_BUP_DATA" = "no" ] && rm -f $BACKUP/$NAME/* 2> /dev/null
@@ -182,7 +182,7 @@ DATA_ANALYSIS ()
 			EOF
 		fi
 	done
-	cp *$SAC ./PROCESS
+	cp *$SAC ./PROCESS 2> /dev/null
 }
 	
 	
@@ -190,7 +190,7 @@ DECO_DECI ()
 {	
 	cd ./PROCESS
 	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
-		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && break 1
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
 	
 	META_TYPE=`echo $META_TYPE | tr '[:upper:]' '[:lower:]'`
 	if [ "$META_TYPE" = "pz" ]; then
@@ -322,7 +322,7 @@ ROTATE ()
 	done
 	
 	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
-		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && break 1
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
 	
 	sac <<- END
 	r ./*$XXR*
@@ -633,12 +633,12 @@ TIME_SHIFT ()
 MAG_2_MOM ()
 {
 	[ ! -f $PYROCKO/mag_to_mom.py ] &&
-		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 	
 	MAG=`zenity --title="Magnitude Scale" --scale --text="Select a magnitude scaled by 10" --value=1 \
 		--min-value=1 --max-value=100 --step=1 2> /dev/null`
 	
-	[ -z "$MAG" ] && break 1	
+	[ -z "$MAG" ] && continue
 		
 	Mag=`echo "scale=1; $MAG / 10" | bc -l`
 	sed -i "3s/.*/magnitude = $Mag/" $PYROCKO/mag_to_mom.py 2> /dev/null
@@ -665,7 +665,8 @@ SYNTHETIC ()
 			--add-entry="Event Latitude (deg)" --add-entry="Event Longitude (deg)" --add-entry="Event Depth (km)" \
 			--add-entry="Event Magnitude" --add-entry="Strike-Dip-Rake (deg)" --add-entry="GFDB ID" 2> /dev/null`
 		
-		[ "${#INFO[@]}" -ne "6" ] && break 1
+		[ "${#INFO[@]}" -ne "6" ] && 
+			zenity --error --title="Info Error" --text="Process Canceled." --width=140 2> /dev/null && continue
 	
 		echo LAT=`echo ${INFO[@]} | cut -f 1 -d " "` >  ./.event.info
 		echo LON=`echo ${INFO[@]} | cut -f 2 -d " "` >> ./.event.info
@@ -682,7 +683,7 @@ SYNTHETIC ()
 		NUM_LINE=`grep -c "=" ./.event.info`
 		NUM_VALS=`grep -ic "=[^ ]" ./.event.info`
 		[ \( ! -f ./.event.info \) -o \( "$NUM_LINE" -ne "$NUM_VALS" \) ] &&
-			zenity --error --title="Info Error" --text="Check the event info file." --width=170 2> /dev/null && break 1
+			zenity --error --title="Info Error" --text="Check the event info file." --width=170 2> /dev/null && continue
 		
 		. ./.event.info
 	fi
@@ -727,11 +728,11 @@ SYNTHETIC ()
 STATION_BEACH_B ()
 {
 	[ ! -d $PLOT/ST_2_FOCAL ] &&
-		zenity --error --title="Error Dialog" --text="PLOT/ST_2_FOCAL directory is missing." --width=270 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="PLOT/ST_2_FOCAL directory is missing." --width=270 2> /dev/null && continue
 		
 	cd $PLOT/ST_2_FOCAL
 	[ ! -f $PYROCKO/station_beachball.py ] &&
-		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 		
 	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
 		--add-entry="Event Latitude (deg)" --add-entry="Event Longitude (deg)" --add-entry="Event Depth (km)" \
@@ -750,7 +751,7 @@ STATION_BEACH_B ()
 	RAK=`echo $FLT | cut -f 3 -d "/"`
 	
 	[ "${#INFO[@]}" -ne "7" ] &&
-		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 
 	sed -i "/rlatlons =/c\rlatlons = [${STINFO[@]}]" $PYROCKO/station_beachball.py 2> /dev/null	
 	sed -i "/slat, slon, sdepth =/c\slat, slon, sdepth = $LAT, $LON, $DEP*km" $PYROCKO/station_beachball.py 2> /dev/null	
@@ -780,7 +781,7 @@ GCMT_SEARCH ()
 {
 	cd $EVE_SEARCH
 	[ ! -f $PYROCKO/search_globalcmt.py ] &&
-		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 	
 	read -a MENU <<< `zenity --forms --title="Event Search" --text="Please enter the event criteria" --separator=" " \
 		--add-calendar="Event Date" --forms-date-format="%Y-%m-%d" --add-entry="Query Start_Time (HH:MM:SS)" \
@@ -800,7 +801,7 @@ GCMT_SEARCH ()
 	${DAT:=`date +%Y-%m-%d`} 2> /dev/null
 	
 	[ "${#MENU[@]}" -ne "7" ] &&
-		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 	sed -i "/tmin =/c\tmin = util.str_to_time ('$DAT $STM')" $PYROCKO/search_globalcmt.py 2> /dev/null 
 	sed -i "/tmax =/c\tmax = util.str_to_time ('$DAT $ETM')" $PYROCKO/search_globalcmt.py 2> /dev/null 
 	sed -i "/magmin/c\    magmin=$MAG," $PYROCKO/search_globalcmt.py 2> /dev/null 
@@ -813,7 +814,7 @@ GCMT_SEARCH ()
 	python $PYROCKO/search_globalcmt.py 2> /dev/null
 	
 	[ ! -f ./GCMT.$NAM.txt ] &&
-		zenity --error --title="Error Dialog" --text="No event found within the given time range." --width=290 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="No event found within the given time range." --width=290 2> /dev/null && continue
 }	
 
 
@@ -821,7 +822,7 @@ GFZ_SEARCH ()
 {	
 	cd $EVE_SEARCH
 	[ ! -f $PYROCKO/search_geofon.py ] &&
-		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 	
 	read -a MENU <<< `zenity --forms --title="Event Search" --text="Please enter the event criteria" --separator=" " \
 		--add-calendar="Event Date" --forms-date-format="%Y-%m-%d" --add-entry="Query Start_Time (HH:MM:SS)" \
@@ -836,7 +837,7 @@ GFZ_SEARCH ()
 	${DAT:=`date +%Y-%m-%d`} 2> /dev/null
 	
 	[ "${#MENU[@]}" -ne "5" ] &&
-		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 	
 	sed -i "/tmin =/c\tmin = util.ctimegm ('$DAT $STM')" $PYROCKO/search_geofon.py 2> /dev/null
 	sed -i "/tmax =/c\tmax = util.ctimegm ('$DAT $ETM')" $PYROCKO/search_geofon.py 2> /dev/null 
@@ -844,14 +845,14 @@ GFZ_SEARCH ()
 	
 	python $PYROCKO/search_geofon.py >> ./GFZ.$NAM.txt 2> /dev/null
 	[ ! -f ./GFZ.$NAM.txt ] &&
-		zenity --error --title="Error Dialog" --text="No event found within the given time range." --width=290 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="No event found within the given time range." --width=290 2> /dev/null && continue
 }
 
 
 MT_2_SDR ()
 {
 	[ ! -f $PYROCKO/mom_to_sdr.py ] &&
-		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 	
 	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
 		--add-entry="Event Magnitude" --add-entry="MT Components Mnn/Mee/Mdd" --add-entry="MT Components Mne/Mnd/Med" 2> /dev/null`
@@ -867,7 +868,7 @@ MT_2_SDR ()
 	Med=`echo $MOM2 | cut -f 3 -d "/"`
 	
 	[ "${#INFO[@]}" -ne "3" ] &&
-		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 	
 	sed -i "/magnitude =/c\magnitude = $MAG" $PYROCKO/mom_to_sdr.py 2> /dev/null
 	sed -i "/mnn/c\    mnn = $Mnn*exp," $PYROCKO/mom_to_sdr.py 2> /dev/null
@@ -885,7 +886,7 @@ MT_2_SDR ()
 SDR_2_MT ()
 {
 	[ ! -f $PYROCKO/sdr_to_mom.py ] &&
-		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 		
 	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
 		--add-entry="Event Magnitude" --add-entry="Str/Dip/Rak (deg)" 2> /dev/null`
@@ -897,7 +898,7 @@ SDR_2_MT ()
 	RAK=`echo $FLT | cut -f 3 -d "/"`
 	
 	[ "${#INFO[@]}" -ne "2" ] &&
-		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 	
 	sed -i "/magnitude =/c\magnitude = $MAG" $PYROCKO/sdr_to_mom.py 2> /dev/null
 	sed -i "/strike =/c\strike = $STR" $PYROCKO/sdr_to_mom.py 2> /dev/null
@@ -912,24 +913,31 @@ SDR_2_MT ()
 HUDSON_DIAG ()
 {
 	[ ! -f $PYROCKO/hudson_diagram.py ] &&
-		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 		
-	read -a INFO <<< `zenity --forms --title="Event Info" --text="Please fill in the requirements:" --separator=" " \
-		--add-entry="Event Magnitude" --add-entry="Str/Dip/Rak (deg)" 2> /dev/null`
+	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
+		--add-entry="Event Magnitude" --add-entry="MT Components Mnn/Mee/Mdd" --add-entry="MT Components Mne/Mnd/Med" 2> /dev/null`
 	
-	MAG=`echo ${INFO[@]} | cut -f 1 -d " "`
-	FLT=`echo ${INFO[@]} | cut -f 2 -d " "`
-	STR=`echo $FLT | cut -f 1 -d "/"`
-	DIP=`echo $FLT | cut -f 2 -d "/"`
-	RAK=`echo $FLT | cut -f 3 -d "/"`
+	MAG=`echo ${INFO[@]}  | cut -f 1 -d " "`
+	MOM1=`echo ${INFO[@]} | cut -f 2 -d " "`
+	MOM2=`echo ${INFO[@]} | cut -f 3 -d " "`
+	Mnn=`echo $MOM1 | cut -f 1 -d "/"`
+	Mee=`echo $MOM1 | cut -f 2 -d "/"`
+	Mdd=`echo $MOM1 | cut -f 3 -d "/"`
+	Mne=`echo $MOM2 | cut -f 1 -d "/"`
+	Mnd=`echo $MOM2 | cut -f 2 -d "/"`
+	Med=`echo $MOM2 | cut -f 3 -d "/"`
 	
-	[ "${#INFO[@]}" -ne "2" ] &&
-		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && break 1
+	[ "${#INFO[@]}" -ne "3" ] &&
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 	
 	sed -i "/magnitude =/c\magnitude = $MAG" $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/strike =/c\strike = $STR" $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/dip =/c\dip = $DIP" $PYROCKO/hudson_diagram.py 2> /dev/null
-	sed -i "/rake =/c\rake = $RAK" $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mnn =/c\    mnn = $Mnn*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mee =/c\    mee = $Mee*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mdd =/c\    mdd = $Mdd*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mne =/c\    mne = $Mne*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mnd =/c\    mnd = $Mnd*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/med =/c\    med = $Med*exp)" $PYROCKO/hudson_diagram.py 2> /dev/null
 
 	python $PYROCKO/hudson_diagram.py
 }
@@ -1106,7 +1114,10 @@ AUTO_ANALYSIS ()
 	[ ! -d $KIWI_RESULTS_DIR/$NAME ] && mkdir $KIWI_RESULTS_DIR/$NAME || rm -f $KIWI_RESULTS_DIR/$NAME/* 2> /dev/null
 	
 	GF_DIR=`zenity --file-selection --title="Please set the path to your Greens Functions directory" --directory 2> /dev/null`
-	INV_ST=`zenity --forms --title="" --text="Please select the Inversion type" --add-combo="Inversion type" --combo-values="DC|DC & MT|KIN" 2> /dev/null`
+	[ -z $GF_DIR ] && continue
+	
+	INV_ST=`zenity --forms --title="" --text="Please select the Inversion type" --add-combo="Inversion type" --combo-values="DC|DC/MT|KIN" 2> /dev/null`
+	[ -z $INV_ST ] && continue
 	
 	AUTO_SET_KIWI_PARAM
 	File="rapidinv_MD_$NAME"
@@ -1116,7 +1127,7 @@ AUTO_ANALYSIS ()
 		"DC")
 			KIWI_STEP1 
 			;;
-		"DC & MT")
+		"DC/MT")
 			KIWI_STEP2 
 			;;
 		"KIN")
@@ -1127,6 +1138,7 @@ AUTO_ANALYSIS ()
 	cd $KIWI_WORK_DIR
 	./rapidinv "$File" 
 }
+
 
 
 ################### Script Body
