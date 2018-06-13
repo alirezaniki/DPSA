@@ -4,16 +4,18 @@ from pyrocko.plot import hudson, beachball, mpl_init, mpl_color
 from pyrocko import moment_tensor as mtm
 import sys
 
-magnitude = 4.6
-strike = 334
-dip = 34
-rake = 33
+magnitude = 6.3
 
-m0 = mtm.magnitude_to_moment(magnitude)  # Convert MW to M0 [Nm]
-mt = mtm.MomentTensor (strike=strike, dip=dip, rake=rake, scalar_moment=m0)  # Create Moment tensor
-m6 = [mt.mnn, mt.mee, mt.mdd, mt.mne, mt.mnd, mt.med]  # Six identical components
-Mt = (m6/mt.scalar_moment())   # Normalize the six identical components
-MT = (Mt[0], Mt[1], Mt[2], Mt[3], Mt[4], Mt[5]) 
+exp = mtm.magnitude_to_moment(magnitude)  
+
+m = mtm.MomentTensor(
+    mnn = 2.34*exp,
+    mee = -2.64*exp,
+    mdd = 0.295*exp,
+    mne = 1.49*exp,
+    mnd = 0.182*exp,
+    med = -0.975*exp)
+
 
 # setup plot layout
 
@@ -28,11 +30,11 @@ fig.subplots_adjust(left=0.03, right=0.97, bottom=0.03, top=0.97)
 
 # draw focal sphere diagrams for the random MT
 
-u, v = hudson.project(MT)
+u, v = hudson.project(m)
 print(u, v)
 try:
     beachball.plot_beachball_mpl(
-        MT, axes,
+        m, axes,
         beachball_type='full',
         position=(u, v),
         size=30,
@@ -50,3 +52,4 @@ hudson.draw_axes(axes)
 
 #fig.savefig('hudson_diagram.png', dpi=250)
 plt.show()
+
