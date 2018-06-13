@@ -1,0 +1,1390 @@
+#!/bin/bash
+#
+#	 DPSA (DATA PROCESSING and Source Analysis)
+#	 Developed by:
+#	 Alireza Niksejel (May 2018) 
+#	 <alireza.niksejel@ut.ac.ir>
+#
+#	 A simple user friendly interface to data processing and 
+#	 Routine source analysis using KIWI (Heimann 2011) tools.
+#	 This script released in the hope that it will be usefull 
+#	 But WITHOUT any WARRANTY.
+# 	 
+#
+
+
+################### Parent Directories
+DPSA_HOME="/home/alireza/Kiwi/DPSA"
+KIWI_WORK_DIR="/home/alireza/Kiwi/WORK"
+KIWI_RESULTS_DIR="/home/alireza/Kiwi/RESULTS"
+KIWI_DATA_DIR="/home/alireza/Kiwi/DATA"
+KIWI_GFDB_DIR="/home/alireza/Kiwi/GFDB"
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~ DO NOT CHANGE ANYTHING BELOW ~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+INPUT="$DPSA_HOME/INPUT"
+RESP="$DPSA_HOME/RESP"
+PLOT="$DPSA_HOME/PLOT"
+BACKUP="$DPSA_HOME/BACKUP"
+MERGE="$DPSA_HOME/MERGE"
+PYROCKO="$DPSA_HOME/PYROCKO"
+GFZ_DATA="$DPSA_HOME/GFZ_DATA"
+SYNTHETIC="$DPSA_HOME/SYNTHETIC"
+EVE_SEARCH="$DPSA_HOME/EVE_SEARCH"
+SHIFT_DATA="$DPSA_HOME/SHIFT_DATA"
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+CONF_FILE="$DPSA_HOME/.conf_file"
+EVE_INFO="$DPSA_HOME/.ev_info"
+LOG_FILE="$DPSA_HOME/.log_file"
+
+
+CONF_FILE ()
+{	
+	[ ! -f "$CONF_FILE" ] && cat <<- \EOF > $CONF_FILE 
+	# Warning:
+	# No space allowed after the equal sign. 
+
+	#------- General Configs -------# 
+	export EDITOR=gedit
+	export IMAGE_V=gvfs-open
+	export IPYTHON=ipython
+	export ROTATE_DATA=no
+	export DATA_TYPE=mseed
+	export DATA_BUP=yes
+	export MAP_SIZE=5
+	export KEEP_PRE_KIWI_DATA=no
+	export KEEP_PRE_BUP_DATA=no
+	
+	#------- SAC Configs -------# 
+	export SAC=SAC
+	export CHAN=BH
+	export MERGE_GAP=zero
+	export TR_TO=none
+	export TR_F1=0.004
+	export TR_F2=0.008
+	export TR_F3=1
+	export TR_F4=1.5
+	export META_TYPE=pz
+	export META_SHAPE_PZ="$ST"-"$CM".pz
+	export META_SHAPE_RESP=RESP."$CM".."$ST"
+	
+	#------- KIWI Configs -------# 
+	export GFDB_NM=db.index
+	export FULLMT=False
+	export WEIGHT_DIST=True
+	export OMIT_NOISY=True
+	export BPRISETIME=True
+	export RELOCATE=True
+	export DC_INV_MOD=invert_dmsds
+	
+	EOF
+
+	NUM_LINE=`grep -c "=" $CONF_FILE`
+	NUM_VALS=`grep -ic "=[^ ]" $CONF_FILE`
+	
+	[ "$NUM_VALS" -ne "$NUM_LINE" ] && 
+		zenity --warning --title="Config Warning" --text="Config file is incomplete! ..." --width=200 2> /dev/null 
+}	
+
+
+BUILD_TREE ()
+{
+	for dir in "INPUT" "RESP" "MERGE" "PLOT" "BACKUP" "EVE_SEARCH" "SYNTHETIC" "GFZ_DATA" "PYROCKO" "SHIFT_DATA" ; do
+		[ ! -d $dir ] && mkdir $dir && echo "${dir##*/} directory created ..." >> $LOG_FILE
+	done	
+	
+	[ -z "$( ls -A $RESP 2> /dev/null )" ] && 
+		zenity --error --title="Metadata Error" --text="No metadata data available! ..." --width=220 2> /dev/null && exit 1
+		
+	[ -z "$( ls $DPSA_HOME/.stations.dat 2> /dev/null )" ] && 
+		zenity --error --title="Info Error" --text="DPSA_HOME/.stations.dat file is missing! ..." --width=270 2> /dev/null && exit 1
+}
+
+
+DECIMATION ()
+{
+	NUM=`echo "scale=2; $RAW_SR / $DSP_SR" | bc -l`
+	NUM_INT=${NUM%.*}
+	NUM_DEC=${NUM#*.}
+	
+	(( `echo "$NUM_DEC" != "00"` )) && 
+		zenity --error --title="SR Error" --width=320 --text="Bad value of initial/target sampling rate detected." 2> /dev/null && break 1
+	
+	if [ "$NUM_INT" -lt "08" ]; then
+		DECIMATE="${NUM_INT}" 
+	else	
+		DEC=`factor $NUM_INT | cut -f 2 -d :`
+		read -r -a DECIMATE <<< $DEC
+		DECICOUNT=${#DECIMATE[@]}
+	fi	
+	echo "DECIMATES are ${DECIMATE[@]}" >> $LOG_FILE
+}	
+
+
+DATA_ANALYSIS ()
+{
+	cd $INPUT
+	[ -z "$( ls ./*$SAC 2> /dev/null )" ] && 
+		zenity --error --title="Input Error" --text="No input data available." --width=160 2> /dev/null && continue	
+	
+	# Backup process
+	[ "$KEEP_PRE_BUP_DATA" = "no" ] && rm -f $BACKUP/$NAME/* 2> /dev/null
+	if [ "$DATA_BUP" = "yes" ]; then
+		[ ! -d $BACKUP/$NAME ] && mkdir $BACKUP/$NAME 
+		cp ./*$SAC $BACKUP/$NAME 
+	fi	
+	
+	# Data processing
+	if [ ! -d ./PROCESS/TRASH ]; then
+		mkdir -p ./PROCESS/TRASH 2> /dev/null
+	else
+		rm -f ./PROCESS/* 2> /dev/null
+		rm -f ./PROCESS/TRASH/* 2> /dev/null
+	fi
+
+	saclst KSTNM f ./*$SAC | awk '{print $2}' | sort | uniq > ./.stations	
+	for st in `cat ./.stations`; do
+		STLA=(`grep "$st" ../.stations.dat 2> /dev/null | awk '{print $3}'`)
+		STLO=(`grep "$st" ../.stations.dat 2> /dev/null | awk '{print $4}'`)
+		STEL=(`grep "$st" ../.stations.dat 2> /dev/null | awk '{print $5}'`)
+				
+		if [ \( -z "$STLA" \) -o \( -z "$STLO" \) -o \( -z "$STEL" \) ]; then
+			echo -e "Not enough info available for $st station. Moved to TRASH ..." >> $LOG_FILE
+			mv *$st* ./PROCESS/TRASH 
+		else
+			read -a DATA_KZTIME <<< `saclst kztime f *$st* | awk '{print $2}' | sort -n | uniq`
+			[ "${#DATA_KZTIME[@]}" -ne "1" ] && 
+				zenity --error --title="Data Error" --text="Some data with different KZTIME detected." --width=280 2> /dev/null && break 1
+				
+			DATA_H="${DATA_KZTIME%%:*}" 
+			DATA_S="${DATA_KZTIME##*:}" 
+			DATA_M="${DATA_KZTIME:3:2}"   
+			DK_sec=`echo "scale=2; ($DATA_H * 3600) + ($DATA_M * 60) + $DATA_S" | bc -l` 
+			OR_sec=`echo "scale=2; ($HOUR * 3600) + ($MIN * 60) + $FULL_SEC" | bc -l`
+			OMARKER=`echo "scale=2; $OR_sec - $DK_sec" | bc -l`
+			sac <<- EOF
+			r *$st*
+			rmean 
+			rtr
+			taper
+			ch evla $LAT
+			ch evlo $LON
+			ch evdp $DEP
+			ch stla $STLA
+			ch stlo $STLO
+			ch stel $STEL
+			ch kevnm $NAME
+			ch O $OMARKER
+			ch lovrok true
+			wh; w over
+			q
+			EOF
+		fi
+	done
+	cp *$SAC ./PROCESS 2> /dev/null
+}
+	
+	
+DECO_DECI ()
+{	
+	cd ./PROCESS
+	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
+	
+	META_TYPE=`echo $META_TYPE | tr '[:upper:]' '[:lower:]'`
+	if [ "$META_TYPE" = "pz" ]; then
+		for data in `ls ./*$SAC`; do
+			ST=`saclst KSTNM f $data | awk '{print $2}'`
+			CM=`saclst KCMPNM f $data | awk '{print $2}'`
+			. $CONF_FILE 
+			if [ ! -f $RESP/$META_SHAPE_PZ ]; then
+				echo -e "No metadata available for $data. Moved to TRASH ..." >> $LOG_FILE 
+				mv $data ./TRASH
+			else		
+				if [ "$DECICOUNT" -eq "1" ]; then
+					sac <<- EOF
+					r $data
+					decimate ${DECIMATE[0]}
+					transfer from polezero subtype $RESP/$META_SHAPE_PZ to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
+					wh; w over
+					q		
+					EOF
+				elif [ "$DECICOUNT" -eq "2" ]; then	
+					sac <<- EOF
+					r $data
+					decimate ${DECIMATE[0]}
+					decimate ${DECIMATE[1]}
+					transfer from polezero subtype $RESP/$META_SHAPE_PZ to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
+					wh; w over
+					q		
+					EOF
+				else
+					sac <<- EOF
+					r $data
+					decimate ${DECIMATE[0]}
+					decimate ${DECIMATE[1]}
+					decimate ${DECIMATE[2]}
+					transfer from polezero subtype $RESP/$META_SHAPE_PZ to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
+					wh; w over
+					q
+					EOF
+				fi
+			fi
+		done	
+	else
+		for data in `ls ./*$SAC`; do
+			ST=`saclst KSTNM f $data | awk '{print $2}'`
+			CM=`saclst KCMPNM f $data | awk '{print $2}'`
+			. $CONF_FILE  
+			if [ ! -f $RESP/$META_SHAPE_RESP ]; then
+				echo -e "There is no metadata for $data. Moved to TRASH ..." >> $LOG_FILE
+				mv $data ./TRASH
+			else	
+				if [ "$DECICOUNT" -eq "1" ]; then				
+					sac <<- EOF
+					r $data
+					decimate ${DECIMATE[0]}
+					div 1e9
+					transfer from evalresp fname $RESP/$META_SHAPE_RESP to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
+					wh; w over
+					q		
+					EOF
+				elif [ "$DECICOUNT" -eq "2" ]; then	
+					sac <<- EOF
+					r $data
+					decimate ${DECIMATE[0]}
+					decimate ${DECIMATE[1]}
+					div 1e9
+					transfer from evalresp fname $RESP/$META_SHAPE_RESP to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
+					wh; w over
+					q		
+					EOF
+				else
+					sac <<- EOF
+					r $data
+					decimate ${DECIMATE[0]}
+					decimate ${DECIMATE[1]}
+					decimate ${DECIMATE[2]}
+					div 1e9
+					transfer from evalresp fname $RESP/$META_SHAPE_RESP to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
+					wh; w over
+					q
+					EOF
+				fi
+			fi	
+		done
+	fi
+}
+
+
+ROTATE ()
+{
+	saclst KSTNM f ./*$SAC | awk '{print $2}'| sort | uniq > ./.st.txt
+	
+	for ST in `cat ./.st.txt`; do
+		if [ \( ! -f ./*$ST*$XXE* \) -o \( ! -f ./*$ST*$XXN* \) ]; then
+			echo -e "$ST station Moved to TRASH, $XXN or $XXE component is missing." >> $LOG_FILE
+			mv *$ST* ./TRASH 
+		else	
+			sac <<- END
+			r ./*$ST*$XXE* 
+			ch cmpaz  90
+			ch cmpinc 90
+			wh; w over
+			r ./*$ST*$XXN*
+			ch cmpaz  0
+			ch cmpinc 90
+			wh; w over
+			q
+			END
+			END1=`saclst E f ./*$ST*$XXE* | awk '{print $2}'`
+			END2=`saclst E f ./*$ST*$XXN* | awk '{print $2}'`	
+			
+			if (( `echo "scale=2; $END1 <= $END2" | bc -l` )); then
+				sac <<- END
+				cut 0 $END1
+				r ./*$ST*$XXN* ./*$ST*$XXE* 
+				rotate to GCP
+				w ./ROT.$ST.$XXR.SAC ./ROT.$ST.$XXT.SAC
+				q
+				END
+			else
+				sac <<- END
+				cut 0 $END2
+				r ./*$ST*$XXN* ./*$ST*$XXE* 
+				rotate to GCP
+				w ./ROT.$ST.$XXR.SAC ./ROT.$ST.$XXT.SAC
+				q
+				END
+			fi
+		fi	
+	done
+	
+	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
+	
+	sac <<- END
+	r ./*$XXR*
+	ch KCMPNM $XXR
+	wh; w over
+	r ./*$XXT*
+	ch KCMPNM $XXT
+	wh; w over
+	q
+	END
+}	
+
+
+SAC2MSEED ()
+{
+	for data in `ls ./*$SAC`; do
+	STA=`saclst KSTNM f $data   | awk '{print $2}'`
+	CMP=`saclst KCMPNM f $data  | awk '{print $2}'`
+	$IPYTHON <<- EOF
+	from obspy import read
+	st=read("$data")[0]
+	st.write("DISPL.$STA.$CMP",format="MSEED")
+	exit
+	EOF
+	done 
+}
+
+
+DATA_TYPE ()
+{
+	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && break 1
+	
+	[ ! -d  $KIWI_DATA_DIR/$NAME ] && mkdir $KIWI_DATA_DIR/$NAME
+	[ "$KEEP_PRE_KIWI_DATA" = "no" ] && rm -f $KIWI_DATA_DIR/$NAME/* 2> /dev/null
+	
+	if [ \( "$DATA_TYPE" = "sac" \) -a \( "$ROTATE_DATA" = "no" \) ]; then
+		for data in `ls ./*$SAC`; do
+			ST=`saclst KSTNM f $data | awk '{print $2}'`
+			CM=`saclst KCMPNM f $data | awk '{print $2}'`
+			mv $data $KIWI_DATA_DIR/$NAME/DISPL.$ST.$CM
+		done
+			
+	elif [ \( "$DATA_TYPE" = "sac" \) -a \( "$ROTATE_DATA" = "yes" \) ]; then
+		ROTATE
+		for data in `ls ./*$XXR* ./*$XXT* ./*$XXZ*`; do
+			ST=`saclst KSTNM f $data | awk '{print $2}'`
+			CM=`saclst KCMPNM f $data | awk '{print $2}'`
+			mv $data $KIWI_DATA_DIR/$NAME/DISPL.$ST.$CM
+		done
+		
+	elif [ \( "$DATA_TYPE" = "mseed" \) -a \( "$ROTATE_DATA" = "no" \) ]; then	
+		SAC2MSEED
+		mv ./DISPL* $KIWI_DATA_DIR/$NAME
+	
+	else
+		ROTATE
+		mv ./*$XXE* ./*$XXN* ./TRASH
+		SAC2MSEED
+		mv ./DISPL* $KIWI_DATA_DIR/$NAME
+	fi	
+}	
+
+
+MERGE ()
+{
+	cd $INPUT
+	[ -z "$(ls ./*$SAC)" ] && 
+		zenity --error --title="Data Error" --text="There is no input data to merge." --width=210 2> /dev/null && break 1
+	
+	read -a delta <<< `saclst DELTA f ./*$SAC | awk '{print $2}'| sort -n | uniq`
+	[ "${#delta[@]}" -ne "1" ] && 
+		zenity --error --title="Header Error" --text="Some different Sampling rates detected." --height=100 2> /dev/null && break 1
+	
+	Name=`zenity --forms --title="Merge Question" --text="Please enter a name to save merged data" --add-entry="Enter Name" 2> /dev/null`	
+	
+	if [ "${#Name[@]}" -eq "1" ]; then
+		if [ ! -d $MERGE/$Name ]; then
+			mkdir $MERGE/$Name 
+		else
+			zenity --question --title="Merge Question" --text="$Name directory already exists.\nRemove it's content?" --width=240 2> /dev/null
+			[ "$?" = "0" ] && rm -f $MERGE/$Name/* 2> /dev/null
+		fi	
+				
+		saclst KSTNM f ./*$SAC  | awk '{print $2}' | sort | uniq > ./.st.txt
+		for ST in `cat ./.st.txt`; do
+			for COM in $XXE $XXN $XXZ; do
+			
+				numtr=`ls ./*$ST*$COM* 2> /dev/null | wc -l`
+				if [ "$numtr" -eq "0" ]; then
+					continue
+					
+				elif [ "$numtr" -eq "1" ]; then 
+					cp ./*$ST*$COM* $MERGE/$Name/M.$ST.$COM.SAC 
+					
+				else	
+					sac <<- END 
+					r *$ST*$COM*
+					merge gap $MERGE_GAP
+					w $MERGE/$Name/M.$ST.$COM.SAC	
+					q
+					END
+				fi	
+			done
+		done
+	else
+		continue
+	fi	
+}
+
+
+GAP ()
+{
+	cd $INPUT
+	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
+		zenity --error --title="Data Error" --text="No data available to process! Check your input directory ..." --height=100 2> /dev/null && break 1
+		
+	# FIRST AZIMUTHAL GAP
+	read -r -a AZI <<< `saclst AZ f ./*$SAC 2> /dev/null | awk '{print $2}' | sort -r -n | uniq`
+	NUM_ST=${#AZI[@]}
+	for ((i=0; i < $((NUM_ST - 1)); i+=1 )); do 
+		DIFF[$i]=`echo "scale=2; ${AZI[$i]} - ${AZI[$i+1]}" | bc -l`
+	done
+	DIFF+=(`echo "scale=2; (360 - ${AZI[0]}) + ${AZI[((NUM_ST-1))]}" | bc -l`)
+	FIRST_G=`echo ${DIFF[@]} | tr " " "\n" | sort -nr | head -1`
+		
+	# SECOND AZIMUTHAL GAP
+	AZIM=(${AZI[@]})
+	
+	for ((i=0; i < $NUM_ST; i+=1 )); do
+		unset AZIM[$i]     # Ignore stations one by one
+		AZIM=(${AZIM[@]})
+		NUM_ST=${#AZIM[@]}
+		
+		for ((j=0; j < $((NUM_ST - 1)); j+=1 )); do 
+			DIF[$j]=`echo "scale=2; ${AZIM[$j]} - ${AZIM[$j+1]}" | bc -l`
+		done
+		
+		DIF+=(`echo "scale=2; (360 - ${AZIM[0]}) + ${AZIM[((NUM_ST-1))]}" | bc -l`)
+		SEC_AZ[$i]=`echo ${DIF[@]} | tr " " "\n" | sort -nr | head -1`		
+		AZIM=(${AZI[@]})
+	done
+	
+	SECOND_G=`echo "${SEC_AZ[@]}" | tr " " "\n" | sort -nr | head -1`
+	echo "First AG= $FIRST_G deg\nSecond AG= $SECOND_G deg" >> $LOG_FILE
+	zenity --info --title "Gap Info Dialog" \
+		--text="First Azimuthal Gap (deg)= $FIRST_G\nSecond Azimuthal Gap (deg)= $SECOND_G" --width=270 2> /dev/null
+}	
+
+
+MAP ()
+{
+	[ ! -f $EVE_INFO ] &&
+		zenity --error --title="Error Dialog" --text="No Event info file available! ..." width=200 2> /dev/null && continue
+	
+	. $EVE_INFO
+	cd $INPUT
+	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
+		zenity --error --title="Data Error" --text="No data available to process." --width=185 2> /dev/null && continue
+
+	MAX_D=`saclst DIST f ./*$SAC | sort -k 2 -nr | awk 'NR==1 {print $2}'` 
+	if (( `echo "$MAX_D <= 300" | bc -l` )); then
+		LAT_I=0.2 && LON_I=0.3 
+	elif (( `echo "$MAX_D > 300" | bc -l` )) && (( `echo "$MAX_D <= 700" | bc -l` )); then
+		LAT_I=0.5 && LON_I=0.7
+	else
+		LAT_I=0.7 && LON_I=1.0
+	fi	
+		
+	LON_MAX=`saclst STLO f ./*$SAC | sort -k 2 -nr | awk 'NR==1 {print $2}'` 
+	LON_MIN=`saclst STLO f ./*$SAC | sort -k 2 -n | awk 'NR==1 {print $2}'` 
+	LAT_MAX=`saclst STLA f ./*$SAC | sort -k 2 -nr | awk 'NR==1 {print $2}'` 
+	LAT_MIN=`saclst STLA f ./*$SAC | sort -k 2 -n | awk 'NR==1 {print $2}'`  
+	LON_MAX=`echo "$LON_MAX + $LON_I" | bc -l`
+	LON_MIN=`echo "$LON_MIN - $LON_I" | bc -l`
+	LAT_MAX=`echo "$LAT_MAX + $LAT_I" | bc -l`
+	LAT_MIN=`echo "$LAT_MIN - $LAT_I" | bc -l`
+	(( `echo "$LON >= $LON_MAX" | bc -l` )) && LON_MAX=`echo "$LON + $LON_I" | bc -l` 
+	(( `echo "$LON <= $LON_MIN" | bc -l` )) && LON_MIN=`echo "$LON - $LON_I" | bc -l` 
+	(( `echo "$LAT >= $LAT_MAX" | bc -l` )) && LAT_MAX=`echo "$LAT + $LAT_I" | bc -l` 
+	(( `echo "$LAT <= $LAT_MIN" | bc -l` )) && LAT_MIN=`echo "$LAT - $LAT_I" | bc -l`
+	
+	saclst STLO STLA f ./*SAC | awk '{print $2,$3}' | sort -n | uniq  > ./.st_coordinate
+	gmt pscoast -W1p,black -R"$LON_MIN"/"$LON_MAX"/"$LAT_MIN"/"$LAT_MAX" -JM"$MAP_SIZE"i -A5000  -Xc -Yc -Na -Ba -Glightbrown -Slightblue -K 2> /dev/null > $PLOT/$NAME.ps
+	gmt psxy -R -J -W0.5,black -i0,1 ./.st_coordinate -St0.35,black -Gblack -K -O 2> /dev/null >> $PLOT/$NAME.ps
+	gmt psxy -R -J -W0.5,red -i0,1 -Sa0.4,red -Gred -K -O 2> /dev/null <<- END >> $PLOT/$NAME.ps
+	$LON $LAT
+	END
+	rm ./gmt.history 2> /dev/null
+	$IMAGE_V $PLOT/$NAME.ps 2> /dev/null
+}	
+
+
+DATA_QUERY ()
+{
+	cd $GFZ_DATA
+	[ ! -f $PYROCKO/catalog_search.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+
+	zenity --question --title="Query Criteria" --text="Load the last query criteria?" 2> /dev/null; ASK="$?"
+	
+	if [ "$ASK" -eq "1" ]; then
+	
+		read -a MENU <<< `zenity --forms --title="Download Criteria" --text="Enter your Query Criteria" --separator=" " \
+			--add-calendar="Event Date" --forms-date-format='%Y-%m-%d' --add-entry="Start_Time (HH:MM:SS)" \
+			--add-entry="End_Time (HH:MM:SS)" --add-entry="Minimum Query Magnitude" --add-entry="Maximum Query Distance (km)" \
+			--add-entry="Minimum Data Frequency (Hz)" --add-entry="Data Sampling Rate (Hz)" --add-combo="Data Orientations" \
+			--combo-values="ENU|RTU" 2> /dev/null`
+		
+		[ "${#MENU[@]}" -ne "8" ] && 
+			zenity --error --title="Criteria Error" --text="Process canceled." --width=150 2> /dev/null && continue
+			
+		echo DAT1=`echo ${MENU[@]} | cut -f 1 -d " "`  >   ./.query.info	
+		echo S_TM=`echo ${MENU[@]} | cut -f 2 -d " "`  >>  ./.query.info
+		echo E_TM=`echo ${MENU[@]} | cut -f 3 -d " "`  >>  ./.query.info
+		echo M_MG=`echo ${MENU[@]} | cut -f 4 -d " "`  >>  ./.query.info
+		echo RADS=`echo ${MENU[@]} | cut -f 5 -d " " ` >>  ./.query.info
+		echo M_FQ=`echo ${MENU[@]} | cut -f 6 -d " "`  >>  ./.query.info
+		echo S_RT=`echo ${MENU[@]} | cut -f 7 -d " "`  >>  ./.query.info
+		echo D_ON=`echo ${MENU[@]} | cut -f 8 -d " " | tr '[:upper:]' '[:lower:]'` >> ./.query.info
+		
+		. ./.query.info
+	
+		sed -i "/tmin =/c\tmin = util.ctimegm (\'$DAT1 $S_TM\')" $PYROCKO/catalog_search.py  
+		sed -i "/tmax =/c\tmax = util.ctimegm (\'$DAT1 $E_TM\')" $PYROCKO/catalog_search.py
+		sed -i "/mag =/c\mag = $M_MG" $PYROCKO/catalog_search.py
+	
+		python $PYROCKO/catalog_search.py > ./.events.info
+	
+	else
+		[ \( ! -f ./.query.info \) -o \( ! -f ./.events.info \) ] &&
+			zenity --error --title="Info Error" --text="Event/Query info file is missing." --width=230 2> /dev/null && continue
+		
+		. ./.query.info
+	fi	
+		
+	ev_num=`grep -c 'pf.Event' ./.events.info`
+	
+	[ "$ev_num" -eq "0" ] && 
+		zenity --error --title="Query Error" --text="Your event not found." --width=180 2> /dev/null && continue
+	
+	if [ "$ev_num" -eq "1" ]; then
+		TM=`grep "time" ./.events.info | cut -f 3 -d " "` 
+		DT=`grep "time" ./.events.info | cut -f 2 -d " "` 
+		NM=`grep "region" ./.events.info | cut -f 2- -d " "`
+		
+		SITE="geofon,iris"
+		rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
+	
+	else	
+	
+		unset LIS
+		for ((i=1; i <= "$ev_num"; i++)); do
+			EVE=`grep -m $i -A 7 'pf.Event' .events.info | tail -7`
+			NAM=`echo $EVE | cut -f 15- -d " "`
+			LAT=`echo $EVE | cut -f 2 -d " "`
+			LON=`echo $EVE | cut -f 4 -d " "`
+			DEP=`echo $EVE | cut -f 11 -d " "`
+			MAG=`echo $EVE | cut -f 13 -d " "`
+			TIM=`echo $EVE | cut -f 7 -d " "`
+			DTE=`echo $EVE | cut -f 6 -d " "`
+			DEP=`echo "scale=0; $DEP / 1000" | bc -l`
+			LIS+=("FALSE")
+			LIS+=("Date=$DTE  Time=$TIM  Lat=$LAT  Lon=$LON  Dep=$DEP  MW=$MAG  ID=$NAM")
+		done
+		
+		EVE=$(zenity --list --text="Select the event within the following list ..." --checklist --column "Pick" \
+				--column "List" "${LIS[@]}" --separator=" " --width=830 --height=200 2> /dev/null)
+
+		if [ -n "$EVE" ]; then
+			DT=`echo $EVE | awk '{print $1}' | cut -f 2 -d =`
+			TM=`echo $EVE | awk '{print $2}' | cut -f 2 -d =`
+			NM=`echo $EVE | awk '{print $7}' | cut -f 2- -d "="`
+		
+			SITE="geofon,iris"
+			rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
+		else
+			zenity --error --title="Error Dialog" --text="Process canceled." --width=150 2> /dev/null && continue
+		fi	
+	fi
+}
+
+
+TIME_SHIFT ()
+{
+	cd $SHIFT_DATA
+	[ ! -f $PYROCKO/time_shift.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+	[ -z "`ls DISPL*`" ] &&
+		zenity --error --title="Error Dialog" --text="No data available to process." --width=200 2> /dev/null && break 1
+		
+	TIME=`zenity --title="Time Shift Scale" --scale --text="Select a time shift in second" --value=1 \
+		--min-value=-50 --max-value=50 --step=1 2> /dev/null`
+	[ -z "$TIME" ] && break 1	
+	
+	sed -i "/tr.shift/c\tr.shift ($TIME)" $PYROCKO/time_shift.py
+	
+	for data in `ls *`; do
+		sed -i "/trace =/c\trace = io.load('$data')" $PYROCKO/time_shift.py 
+		sed -i "/io.save/c\io.save (tr, 'SH.$data')" $PYROCKO/time_shift.py 
+		python $PYROCKO/time_shift.py 
+	done
+	mkdir SHIFTED_DATA 2> /dev/null
+	mv SH.* ./SHIFTED_DATA
+}	
+
+
+MAG_2_MOM ()
+{
+	[ ! -f $PYROCKO/mag_to_mom.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+	
+	MAG=`zenity --title="Magnitude Scale" --scale --text="Select a magnitude scaled by 10" --value=1 \
+		--min-value=1 --max-value=100 --step=1 2> /dev/null`
+	
+	[ -z "$MAG" ] && continue
+		
+	Mag=`echo "scale=1; $MAG / 10" | bc -l`
+	sed -i "3s/.*/magnitude = $Mag/" $PYROCKO/mag_to_mom.py 2> /dev/null
+	
+	Mom=`python $PYROCKO/mag_to_mom.py`
+	zenity --info --title="Result Dialog" --text="Conversion resul is:\n$Mom [Nm]" --width=200 2> /dev/null
+}
+
+
+SYNTHETIC ()
+{
+	cd $SYNTHETIC
+	[ ! -f $PYROCKO/synthetics.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+		
+	[ ! -f ./stations.info ] &&
+		zenity --error --title="Info Error" --text="No station info file available." --width=190 2> /dev/null && continue
+		
+	zenity --question --title="Question Dialog" --text="Load the last imported event info?" 2> /dev/null; ASK="$?"
+	
+	if [ "$ASK" -eq "1" ]; then
+	
+		read -a INFO <<< `zenity --forms --title="Event Info" --text="Please complete the following fields." --separator=" " \
+			--add-entry="Event Latitude (deg)" --add-entry="Event Longitude (deg)" --add-entry="Event Depth (km)" \
+			--add-entry="Event Magnitude" --add-entry="Strike-Dip-Rake (deg)" --add-entry="GFDB ID" 2> /dev/null`
+		
+		[ "${#INFO[@]}" -ne "6" ] && 
+			zenity --error --title="Info Error" --text="Process Canceled." --width=140 2> /dev/null && continue
+	
+		echo LAT=`echo ${INFO[@]} | cut -f 1 -d " "` >  ./.event.info
+		echo LON=`echo ${INFO[@]} | cut -f 2 -d " "` >> ./.event.info
+		echo DEP=`echo ${INFO[@]} | cut -f 3 -d " "` >> ./.event.info
+		echo MAG=`echo ${INFO[@]} | cut -f 4 -d " "` >> ./.event.info
+		echo GID=`echo ${INFO[@]} | cut -f 6 -d " "` >> ./.event.info	
+		SOC=`echo ${INFO[@]} | cut -f 5 -d " " ` 
+		echo STR=`echo $SOC | cut -f 1 -d "-"` >> ./.event.info
+		echo DIP=`echo $SOC | cut -f 2 -d "-"` >> ./.event.info
+		echo RAK=`echo $SOC | cut -f 3 -d "-"` >> ./.event.info		
+		. ./.event.info
+	
+	else
+		NUM_LINE=`grep -c "=" ./.event.info`
+		NUM_VALS=`grep -ic "=[^ ]" ./.event.info`
+		[ \( ! -f ./.event.info \) -o \( "$NUM_LINE" -ne "$NUM_VALS" \) ] &&
+			zenity --error --title="Info Error" --text="Check the event info file." --width=170 2> /dev/null && continue
+		
+		. ./.event.info
+	fi
+	
+	DEPTH=`echo "scale=0; $DEP * 1000" | bc -l`
+	
+	sed -i "/engine =/c\engine = LocalEngine(store_superdirs=['$KIWI_GFDB_DIR'])" $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i "29s/.*/    lat=$LAT,/"	     $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i "30s/.*/    lon=$LON,/"       $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i "31s/.*/    depth=$DEPTH,/"   $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i "32s/.*/    strike=$STR,/"    $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i "33s/.*/    dip=$DIP,/"       $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i "34s/.*/    rake=$RAK,/"      $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i "35s/.*/    magnitude=$MAG)/" $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i '/^$/d' ./stations.info 2> /dev/null 
+	
+	while read line; do
+		STNM=`echo $line | cut -f 1 -d " "`
+		STLA=`echo $line | cut -f 2 -d " "`		
+		STLO=`echo $line | cut -f 3 -d " "`
+		
+		sed -i "21s/.*/        lat=$STLA,/" $PYROCKO/synthetics.py 2> /dev/null 
+		sed -i "22s/.*/        lon=$STLO,/" $PYROCKO/synthetics.py 2> /dev/null 
+		sed -i "24s/.*/        codes=('', '$STNM', '', channel_code))/" $PYROCKO/synthetics.py 2> /dev/null 
+		sed -i "42s/.*/io.save(synthetic_traces, 'DISPL.$STNM.mseed')/" $PYROCKO/synthetics.py 2> /dev/null 
+		python $PYROCKO/synthetics.py 
+		
+	done < ./stations.info
+	
+	for data in `ls *mseed`; do mseed2sac $data 2> /dev/null 1>&2; done
+	for data in `ls .*SAC`; do mv $data ${data#*.}; done
+		
+	mkdir SAC_Data MSEED_Data 2> /dev/null
+	[ \( -n "$(ls SAC_Data/*SAC 2> /dev/null)" \) -o \( -n "$(ls MSEED_Data/*mseed 2> /dev/null)" \) ] &&
+		zenity --question --title="Data Removal" --text="Remove the previous processed data?" --width=250 2> /dev/null; ANS="$?"
+	
+	if [ "$ANS" -eq "0" ]; then rm -f SAC_Data/* 2> /dev/null; rm -f MSEED_Data/* 2> /dev/null; fi
+	mv ./*SAC SAC_Data; mv ./*mseed MSEED_Data
+}
+
+
+STATION_BEACH_B ()
+{
+	[ ! -d $PLOT/ST_2_FOCAL ] &&
+		zenity --error --title="Error Dialog" --text="PLOT/ST_2_FOCAL directory is missing." --width=270 2> /dev/null && continue
+		
+	cd $PLOT/ST_2_FOCAL
+	[ ! -f $PYROCKO/station_beachball.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+		
+	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
+		--add-entry="Event Latitude (deg)" --add-entry="Event Longitude (deg)" --add-entry="Event Depth (km)" \
+		--add-entry="Event Magnitude" --add-entry="Str/Dip/Rak (deg)" --add-entry="Velocity Model Name" \
+		--add-combo="Phase to use" --combo-values="P|p|S|s" 2> /dev/null`	
+		
+	LAT=`echo ${INFO[@]} | cut -f 1 -d " "`
+	LON=`echo ${INFO[@]} | cut -f 2 -d " "`
+	DEP=`echo ${INFO[@]} | cut -f 3 -d " "`
+	MAG=`echo ${INFO[@]} | cut -f 4 -d " "`
+	FLT=`echo ${INFO[@]} | cut -f 5 -d " "`
+	VEL=`echo ${INFO[@]} | cut -f 6 -d " "`
+	PHS=`echo ${INFO[@]} | cut -f 7 -d " "`
+	STR=`echo $FLT | cut -f 1 -d "/"`
+	DIP=`echo $FLT | cut -f 2 -d "/"`
+	RAK=`echo $FLT | cut -f 3 -d "/"`
+	
+	[ "${#INFO[@]}" -ne "7" ] &&
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
+
+	sed -i "/rlatlons =/c\rlatlons = [${STINFO[@]}]" $PYROCKO/station_beachball.py 2> /dev/null	
+	sed -i "/slat, slon, sdepth =/c\slat, slon, sdepth = $LAT, $LON, $DEP*km" $PYROCKO/station_beachball.py 2> /dev/null	
+	sed -i "/magnitude =/c\magnitude = $MAG" $PYROCKO/station_beachball.py 2> /dev/null
+	sed -i "/strike =/c\strike = $STR" $PYROCKO/station_beachball.py 2> /dev/null
+	sed -i "/dip =/c\dip = $DIP" $PYROCKO/station_beachball.py 2> /dev/null
+	sed -i "/rake =/c\rake = $RAK" $PYROCKO/station_beachball.py 2> /dev/null
+	sed -i "/phases =/c\phases = cake.PhaseDef.classic('$PHS')" $PYROCKO/station_beachball.py 2> /dev/null
+	sed -i "/mod =/c\mod = cake.load_model('$VEL')" $PYROCKO/station_beachball.py 2> /dev/null
+	sed -i '/^$/d' ./stations.dat
+		
+	unset STINFO
+	while read line; do
+		SLA=`echo $line | awk '{print $1}'`
+		SLO=`echo $line | awk '{print $2}'`
+		STINFO+=("($SLA, $SLO), ")
+	done < ./stations.dat
+	
+	INFO="[${STINFO[*]}]"
+	sed -i "/rlatlons =/c\rlatlons = [${STINFO[*]}]" $PYROCKO/station_beachball.py 2> /dev/null
+
+	python $PYROCKO/station_beachball.py 
+}	
+
+
+GCMT_SEARCH ()
+{
+	cd $EVE_SEARCH
+	[ ! -f $PYROCKO/search_globalcmt.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+	
+	read -a MENU <<< `zenity --forms --title="Event Search" --text="Please enter the event criteria" --separator=" " \
+		--add-calendar="Event Date" --forms-date-format="%Y-%m-%d" --add-entry="Query Start_Time (HH:MM:SS)" \
+		--add-entry="Query End_Time (HH:MM:SS)" --add-entry="Min_Lat/Max_lat (deg)" --add-entry="Min_Lon/Max_Lon (deg)" \
+		--add-entry="Minimum Query Magnitude" --add-entry="Enter output name" 2> /dev/null`
+		
+	DAT=`echo ${MENU[@]} | cut -f 1 -d " "`
+	STM=`echo ${MENU[@]} | cut -f 2 -d " "`
+	ETM=`echo ${MENU[@]} | cut -f 3 -d " "`
+	LA1=`echo ${MENU[@]} | cut -f 4 -d " " | cut -f 1 -d "/"`
+	LA2=`echo ${MENU[@]} | cut -f 4 -d " " | cut -f 2 -d "/"`
+	LO1=`echo ${MENU[@]} | cut -f 5 -d " " | cut -f 1 -d "/"`
+	LO2=`echo ${MENU[@]} | cut -f 5 -d " " | cut -f 2 -d "/"`
+	MAG=`echo ${MENU[@]} | cut -f 6 -d " "`
+	NAM=`echo ${MENU[@]} | cut -f 7 -d " "`
+	
+	${DAT:=`date +%Y-%m-%d`} 2> /dev/null
+	
+	[ "${#MENU[@]}" -ne "7" ] &&
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
+	sed -i "/tmin =/c\tmin = util.str_to_time ('$DAT $STM')" $PYROCKO/search_globalcmt.py 2> /dev/null 
+	sed -i "/tmax =/c\tmax = util.str_to_time ('$DAT $ETM')" $PYROCKO/search_globalcmt.py 2> /dev/null 
+	sed -i "/magmin/c\    magmin=$MAG," $PYROCKO/search_globalcmt.py 2> /dev/null 
+	sed -i "/latmin/c\    latmin=$LA1," $PYROCKO/search_globalcmt.py 2> /dev/null 
+	sed -i "/latmax/c\    latmax=$LA2," $PYROCKO/search_globalcmt.py 2> /dev/null 
+	sed -i "/lonmin/c\    lonmin=$LO1," $PYROCKO/search_globalcmt.py 2> /dev/null 
+	sed -i "/lonmax/c\    lonmax=$LO2)" $PYROCKO/search_globalcmt.py 2> /dev/null 
+	sed -i "/model.dump_events/c\model.dump_events(events, 'GCMT.$NAM.txt')" $PYROCKO/search_globalcmt.py 2> /dev/null 
+	
+	python $PYROCKO/search_globalcmt.py 2> /dev/null
+	
+	[ ! -f ./GCMT.$NAM.txt ] &&
+		zenity --error --title="Error Dialog" --text="No event found within the given time range." --width=290 2> /dev/null && continue
+}	
+
+
+GFZ_SEARCH ()
+{	
+	cd $EVE_SEARCH
+	[ ! -f $PYROCKO/search_geofon.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+	
+	read -a MENU <<< `zenity --forms --title="Event Search" --text="Please enter the event criteria" --separator=" " \
+		--add-calendar="Event Date" --forms-date-format="%Y-%m-%d" --add-entry="Query Start_Time (HH:MM:SS)" \
+		--add-entry="Query End_Time (HH:MM:SS)" --add-entry="Minimum Query Magnitude" --add-entry="Enter output name" 2> /dev/null`
+		
+	DAT=`echo ${MENU[@]} | cut -f 1 -d " "`
+	STM=`echo ${MENU[@]} | cut -f 2 -d " "`
+	ETM=`echo ${MENU[@]} | cut -f 3 -d " "`
+	MAG=`echo ${MENU[@]} | cut -f 4 -d " "`
+	NAM=`echo ${MENU[@]} | cut -f 5 -d " "`
+	
+	${DAT:=`date +%Y-%m-%d`} 2> /dev/null
+	
+	[ "${#MENU[@]}" -ne "5" ] &&
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
+	
+	sed -i "/tmin =/c\tmin = util.ctimegm ('$DAT $STM')" $PYROCKO/search_geofon.py 2> /dev/null
+	sed -i "/tmax =/c\tmax = util.ctimegm ('$DAT $ETM')" $PYROCKO/search_geofon.py 2> /dev/null 
+	sed -i "/mag =/c\mag = $MAG" $PYROCKO/search_geofon.py 2> /dev/null
+	
+	python $PYROCKO/search_geofon.py >> ./GFZ.$NAM.txt 2> /dev/null
+	[ ! -f ./GFZ.$NAM.txt ] &&
+		zenity --error --title="Error Dialog" --text="No event found within the given time range." --width=290 2> /dev/null && continue
+}
+
+
+MT_2_SDR ()
+{
+	[ ! -f $PYROCKO/mom_to_sdr.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+	
+	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
+		--add-entry="Event Magnitude" --add-entry="MT Components Mnn/Mee/Mdd" --add-entry="MT Components Mne/Mnd/Med" 2> /dev/null`
+	
+	MAG=`echo ${INFO[@]}  | cut -f 1 -d " "`
+	MOM1=`echo ${INFO[@]} | cut -f 2 -d " "`
+	MOM2=`echo ${INFO[@]} | cut -f 3 -d " "`
+	Mnn=`echo $MOM1 | cut -f 1 -d "/"`
+	Mee=`echo $MOM1 | cut -f 2 -d "/"`
+	Mdd=`echo $MOM1 | cut -f 3 -d "/"`
+	Mne=`echo $MOM2 | cut -f 1 -d "/"`
+	Mnd=`echo $MOM2 | cut -f 2 -d "/"`
+	Med=`echo $MOM2 | cut -f 3 -d "/"`
+	
+	[ "${#INFO[@]}" -ne "3" ] &&
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
+	
+	sed -i "/magnitude =/c\magnitude = $MAG" $PYROCKO/mom_to_sdr.py 2> /dev/null
+	sed -i "/mnn/c\    mnn = $Mnn*exp," $PYROCKO/mom_to_sdr.py 2> /dev/null
+	sed -i "/mee/c\    mee = $Mee*exp," $PYROCKO/mom_to_sdr.py 2> /dev/null
+	sed -i "/mdd/c\    mdd = $Mdd*exp," $PYROCKO/mom_to_sdr.py 2> /dev/null
+	sed -i "/mne/c\    mne = $Mne*exp," $PYROCKO/mom_to_sdr.py 2> /dev/null
+	sed -i "/mnd/c\    mnd = $Mnd*exp," $PYROCKO/mom_to_sdr.py 2> /dev/null
+	sed -i "/med/c\    med = $Med*exp)" $PYROCKO/mom_to_sdr.py 2> /dev/null
+	
+	echo -e "\n"
+	python $PYROCKO/mom_to_sdr.py
+}
+
+
+SDR_2_MT ()
+{
+	[ ! -f $PYROCKO/sdr_to_mom.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+		
+	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
+		--add-entry="Event Magnitude" --add-entry="Str/Dip/Rak (deg)" 2> /dev/null`
+	
+	MAG=`echo ${INFO[@]} | cut -f 1 -d " "`
+	FLT=`echo ${INFO[@]} | cut -f 2 -d " "`
+	STR=`echo $FLT | cut -f 1 -d "/"`
+	DIP=`echo $FLT | cut -f 2 -d "/"`
+	RAK=`echo $FLT | cut -f 3 -d "/"`
+	
+	[ "${#INFO[@]}" -ne "2" ] &&
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
+	
+	sed -i "/magnitude =/c\magnitude = $MAG" $PYROCKO/sdr_to_mom.py 2> /dev/null
+	sed -i "/strike =/c\strike = $STR" $PYROCKO/sdr_to_mom.py 2> /dev/null
+	sed -i "/dip =/c\dip = $DIP" $PYROCKO/sdr_to_mom.py 2> /dev/null
+	sed -i "/rake =/c\rake = $RAK" $PYROCKO/sdr_to_mom.py 2> /dev/null
+	
+	echo -e "\n"
+	python $PYROCKO/sdr_to_mom.py
+}
+
+
+HUDSON_DIAG ()
+{
+	[ ! -f $PYROCKO/hudson_diagram.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
+		
+	read -a INFO <<< `zenity --forms --title="Moment Info" --text="Please fill in the requirements:" --separator=" " \
+		--add-entry="Event Magnitude" --add-entry="MT Components Mnn/Mee/Mdd" --add-entry="MT Components Mne/Mnd/Med" 2> /dev/null`
+	
+	MAG=`echo ${INFO[@]}  | cut -f 1 -d " "`
+	MOM1=`echo ${INFO[@]} | cut -f 2 -d " "`
+	MOM2=`echo ${INFO[@]} | cut -f 3 -d " "`
+	Mnn=`echo $MOM1 | cut -f 1 -d "/"`
+	Mee=`echo $MOM1 | cut -f 2 -d "/"`
+	Mdd=`echo $MOM1 | cut -f 3 -d "/"`
+	Mne=`echo $MOM2 | cut -f 1 -d "/"`
+	Mnd=`echo $MOM2 | cut -f 2 -d "/"`
+	Med=`echo $MOM2 | cut -f 3 -d "/"`
+	
+	[ "${#INFO[@]}" -ne "3" ] &&
+		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
+	
+	sed -i "/magnitude =/c\magnitude = $MAG" $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mnn =/c\    mnn = $Mnn*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mee =/c\    mee = $Mee*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mdd =/c\    mdd = $Mdd*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mne =/c\    mne = $Mne*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/mnd =/c\    mnd = $Mnd*exp," $PYROCKO/hudson_diagram.py 2> /dev/null
+	sed -i "/med =/c\    med = $Med*exp)" $PYROCKO/hudson_diagram.py 2> /dev/null
+
+	python $PYROCKO/hudson_diagram.py
+}
+
+
+AUTO_SET_KIWI_PARAM ()
+{
+	GF_NM=${GFDB_NM%.*}
+	n_x=`gfdb_info $GF_DIR/$GF_NM | grep "nx" | cut -f 2 -d = | head  -1`
+	x_d=`gfdb_info $GF_DIR/$GF_NM | grep "dx" | cut -f 2 -d =`
+	f_x=`gfdb_info $GF_DIR/$GF_NM | grep "firstx" | cut -f 2 -d =`
+	MAX_DIS=`echo "scale=2; ($f_x / 1000) + ($n_x * $x_d) / 1000" | bc -l`
+	MIN_DIS=`echo "scale=2; $f_x / 1000" | bc -l`
+	n_z=`gfdb_info $GF_DIR/$GF_NM | grep "nz" | cut -f 2 -d =`
+	z_d=`gfdb_info $GF_DIR/$GF_NM | grep "dz" | cut -f 2 -d =`
+	f_z=`gfdb_info $GF_DIR/$GF_NM | grep "firstz" | cut -f 2 -d =`
+	MAX_DEP=`echo "scale=2; ($f_z / 1000) + ($n_z * $z_d) / 1000" | bc -l`
+	MIN_DEP=`echo "scale=2; $f_z / 1000" | bc -l`
+	
+	case "$MAG" in
+		4.[0-5])
+				F1=(0.05 0.05 0.08 0.08)
+				F2=(0.05 0.05 0.08 0.08)
+				F3=(0.05 0.05 0.45 0.45)
+				NE=20000; NES=3000
+				T=5; TS=0.5 ; CC=5
+				W_S=0.2; W_T=0.1
+				SCA_M1="8e14"; SCA_M2="2e16"; SCA_MS="1e15"
+				;;	
+		4.[6-9])		
+				F1=(0.04 0.04 0.07 0.07)
+				F2=(0.04 0.04 0.07 0.07)
+				F3=(0.04 0.04 0.35 0.35)
+				NE=25000; NES=3000
+				T=5; TS=0.5; CC=5
+				W_S=0.2; W_T=0.1
+				SCA_M1="6e15"; SCA_M2="6e16"; SCA_MS="1e15"					
+				;;	
+		5.[0-5])
+				F1=(0.03 0.03 0.06 0.06)
+				F2=(0.03 0.03 0.06 0.06)
+				F3=(0.03 0.03 0.25 0.25)
+				NE=30000; NES=4000
+				T=8; TS=0.5; CC=5
+				W_S=0.2; W_T=0.1	
+				SCA_M1="1e16"; SCA_M2="5e17"; SCA_MS="1e16"		
+				;;						
+		5.[6-9])
+				F1=(0.02 0.02 0.05 0.05)
+				F2=(0.02 0.02 0.05 0.05)
+				F3=(0.02 0.02 0.20 0.20)
+				NE=35000; NES=4000
+				T=10; TS=0.5; CC=5
+				W_S=0.15; W_T=0.05		
+				SCA_M1="1e17"; SCA_M2="1e18"; SCA_MS="1e17"									
+				;;	
+		6.[0-9])
+				F1=(0.01 0.01 0.04 0.04)
+				F2=(0.01 0.01 0.04 0.04)
+				F3=(0.01 0.01 0.10 0.10)
+				NE=45000; NES=6000
+				T=15; TS=0.5; CC=5
+				W_S=0.1; W_T=0.05	
+				SCA_M1="8e17"; SCA_M2="7e19"; SCA_MS="1e18"										
+				;;						
+		7.[0-5])
+				F1=(0.005 0.005 0.02 0.02)
+				F2=(0.005 0.005 0.02 0.02)
+				F3=(0.005 0.005 0.05 0.05)
+				NE=60000; NES=8000
+				T=25; TS=0.5; CC=5
+				W_S=0.05; W_T=0.01	
+				SCA_M1="1e19"; SCA_M2="5e20"; SCA_MS="1e19"										
+				;;
+	esac	
+}
+
+
+KIWI_STEP1 ()
+{
+	NM=`echo $NAME | tr '[:upper:]' '[:lower:]'` 
+	if (( `echo "$MAX_DIS <= 600" | bc -l` )); then
+		LEN_PLOT=300; PLOT_ST=60
+	else
+		LEN_PLOT=450; PLOT_ST=100
+	fi	
+	
+	sed -i "/\<GFDB_STEP1\>/c\GFDB_STEP1     $GF_DIR" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<GFDB_STEP2\>/c\GFDB_STEP2     $GF_DIR" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<GFDB_STEP3\>/c\GFDB_STEP3     $GF_DIR" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<NUM_INV_STEPS\>/c\NUM_INV_STEPS    1" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<EPIC_DIST_MAX\>/c\EPIC_DIST_MAX     $MAX_DIS" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<EPIC_DIST_MIN\>/c\EPIC_DIST_MIN     $MIN_DIS" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<WIN_START_A_ST1\>/c\WIN_START_A_ST1     $W_S" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<WIN_TAPER_A_ST1\>/c\WIN_TAPER_A_ST1     $W_T" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<DEPTH_UPPERLIM\>/c\DEPTH_UPPERLIM   $MIN_DEP" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<DEPTH_BOTTOMLIM\>/c\DEPTH_BOTTOMLIM  $MAX_DEP" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<SW_FULLMT\>/c\SW_FULLMT       $FULLMT" $KIWI_WORK_DIR/$File  2> /dev/null 
+	sed -i "/\<SW_WEIGHT_DIST\>/c\SW_WEIGHT_DIST   $WEIGHT_DIST" $KIWI_WORK_DIR/$File  2> /dev/null 
+	sed -i "/\<SCAL_MOM_1\>/c\SCAL_MOM_1      $SCA_M1" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<SCAL_MOM_2\>/c\SCAL_MOM_2      $SCA_M2" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<SCAL_MOM_STEP\>/c\SCAL_MOM_STEP   $SCA_MS" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<SW_FILTERNOISY\>/c\SW_FILTERNOISY  $OMIT_NOISY" $KIWI_WORK_DIR/$File  2> /dev/null 
+	sed -i "/\<INV_MODE_STEP1\>/c\INV_MODE_STEP1   $DC_INV_MOD" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<BP_F1_STEP1\>/c\BP_F1_STEP1       ${F1[0]}" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<BP_F2_STEP1\>/c\BP_F2_STEP1       ${F1[1]}"	$KIWI_WORK_DIR/$File  2> /dev/null		
+	sed -i "/\<BP_F3_STEP1\>/c\BP_F3_STEP1       ${F1[2]}"	$KIWI_WORK_DIR/$File  2> /dev/null		
+	sed -i "/\<BP_F4_STEP1\>/c\BP_F4_STEP1       ${F1[3]}"	$KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<LEN_PLOT_STEP1\>/c\LEN_PLOT_STEP1   $LEN_PLOT" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<TICK_PLOT_STEP1\>/c\TICK_PLOT_STEP1  $PLOT_ST" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<INVERSION_DIR\>/c\INVERSION_DIR   $KIWI_RESULTS_DIR/$NAME" $KIWI_WORK_DIR/$File 2> /dev/null
+	sed -i "/\<DATA_DIR\>/c\DATA_DIR    $KIWI_DATA_DIR/$NAME" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<DATA_FILE\>/c\DATA_FILE        $NM" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<LATITUDE_NORTH\>/c\LATITUDE_NORTH   $LAT" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<LONGITUDE_EAST\>/c\LONGITUDE_EAST   $LON" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<YEAR\>/c\YEAR       $YEAR" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<MONTH\>/c\MONTH      $MONTH" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<DAY\>/c\DAY        $DAY" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<HOUR\>/c\HOUR       $HOUR" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<MIN\>/c\MIN        $MIN" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<SEC\>/c\SEC        $SECN" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<DEPTH_1\>/c\DEPTH_1          $DEP" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<DEPTH_2\>/c\DEPTH_2          $DEP" $KIWI_WORK_DIR/$File  2> /dev/null
+}
+
+
+KIWI_STEP2 ()
+{
+	KIWI_STEP1	
+	sed -i "/\<NUM_INV_STEPS\>/c\NUM_INV_STEPS   2" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<LEN_PLOT_STEP2\>/c\LEN_PLOT_STEP2    $LEN_PLOT" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<TICK_PLOT_STEP2\>/c\TICK_PLOT_STEP2   $PLOT_ST" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<CC_SHIFT1\>/c\CC_SHIFT1       -$CC"  $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<CC_SHIFT2\>/c\CC_SHIFT2        $CC"  $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<REL_NORTH_1\>/c\REL_NORTH_1     -$NE"  $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<REL_NORTH_2\>/c\REL_NORTH_2      $NE"  $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<REL_EAST_1\>/c\REL_EAST_1      -$NE"  $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<REL_EAST_2\>/c\REL_EAST_2       $NE"  $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<REL_NORTH_STEP\>/c\REL_NORTH_STEP   $NES"  $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<REL_EAST_STEP\>/c\REL_EAST_STEP    $NES"	 $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<REL_TIME_2\>/c\REL_TIME_2       $T" $KIWI_WORK_DIR/$File  2> /dev/null 		
+	sed -i "/\<REL_TIME_STEP\>/c\REL_TIME_STEP    $TS" $KIWI_WORK_DIR/$File  2> /dev/null	
+	sed -i "/\<BP_F1_STEP2\>/c\BP_F1_STEP2    ${F2[0]}" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<BP_F2_STEP2\>/c\BP_F2_STEP2    ${F2[1]}"	$KIWI_WORK_DIR/$File  2> /dev/null	
+	sed -i "/\<BP_F3_STEP2\>/c\BP_F3_STEP2    ${F2[2]}"	$KIWI_WORK_DIR/$File  2> /dev/null	
+	sed -i "/\<BP_F4_STEP2\>/c\BP_F4_STEP2    ${F2[3]}"	$KIWI_WORK_DIR/$File  2> /dev/null	
+	sed -i "/\<WIN_START_A_ST2\>/c\WIN_START_A_ST2  $W_S" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<WIN_TAPER_A_ST2\>/c\WIN_TAPER_A_ST2  $W_T" $KIWI_WORK_DIR/$File  2> /dev/null
+}
+
+
+KIWI_STEP3 ()
+{
+	KIWI_STEP1
+	KIWI_STEP2
+	sed -i "/\<NUM_INV_STEPS\>/c\NUM_INV_STEPS   3" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<BP_F1_STEP3\>/c\BP_F1_STEP3   ${F3[0]}" $KIWI_WORK_DIR/$File 2> /dev/null
+	sed -i "/\<BP_F2_STEP3\>/c\BP_F2_STEP3   ${F3[1]}"	$KIWI_WORK_DIR/$File  2> /dev/null	
+	sed -i "/\<BP_F3_STEP3\>/c\BP_F3_STEP3   ${F3[2]}"	$KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<BP_F4_STEP3\>/c\BP_F4_STEP3   ${F3[3]}"	$KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<WIN_START_A_ST3\>/c\WIN_START_A_ST3   $W_S" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<WIN_TAPER_A_ST3\>/c\WIN_TAPER_A_ST3   $W_T" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<SW_BPRISETIME\>/c\SW_BPRISETIME    $BPRISETIME" $KIWI_WORK_DIR/$File  2> /dev/null 
+	sed -i "/\<SW_RELOCATE\>/c\SW_RELOCATE   $RELOCATE" $KIWI_WORK_DIR/$File  2> /dev/null
+}
+
+
+AUTO_ANALYSIS ()
+{
+	[ \( ! -d $KIWI_DATA_DIR/$NAME \) -o \( -z "$(ls $KIWI_DATA_DIR/$NAME/DISPL* 2> /dev/null)" \) ] &&  
+		zenity --error --title "Data Error" --text="No data available to process! ..." width=200  2> /dev/null && continue
+	
+	[ ! -f $KIWI_DATA_DIR/$NAME/stations.dat ] && cat $DPSA_HOME/.stations.dat | awk '{print $1,$2,$3,$4}' > $KIWI_DATA_DIR/$NAME/stations.dat
+	[ ! -d $KIWI_RESULTS_DIR/$NAME ] && mkdir $KIWI_RESULTS_DIR/$NAME || rm -f $KIWI_RESULTS_DIR/$NAME/* 2> /dev/null
+	
+	GF_DIR=`zenity --file-selection --title="Please set the path to your Greens Functions directory" --directory 2> /dev/null`
+	[ -z $GF_DIR ] && continue
+	
+	INV_ST=`zenity --forms --title="" --text="Please select the Inversion type" --add-combo="Inversion type" --combo-values="DC|DC/MT|KIN" 2> /dev/null`
+	[ -z $INV_ST ] && continue
+	
+	AUTO_SET_KIWI_PARAM
+	File="rapidinv_MD_$NAME"
+	cp $DPSA_HOME/.Template $KIWI_WORK_DIR/$File
+	
+	case $INV_ST in
+		"DC")
+			KIWI_STEP1 
+			;;
+		"DC/MT")
+			KIWI_STEP2 
+			;;
+		"KIN")
+			KIWI_STEP3 
+			;;
+	esac
+
+	cd $KIWI_WORK_DIR
+	./rapidinv "$File" 
+}
+
+
+
+################### Script Body
+CONF_FILE
+BUILD_TREE
+
+. $CONF_FILE  
+
+trap 'echo "Operation Not Allowed!"' INT TERM
+XXE="$CHAN"E; XXN="$CHAN"N; XXZ="$CHAN"Z; XXR="$CHAN"R; XXT="$CHAN"T
+
+
+while true; do    # Make it possible to return to main menu from submenu
+	MAIN=`zenity --title="DPSA Main Menu" --text="Please select a task" --height=260 --width=300 --print-column="2" --column="Num" \
+		--column="Task" --list "1" "Data Query" "2" "Data Proccessing" "3" "Quick Source Study" "4" "Open Config File" \
+		"5" "Exit" 2> /dev/null`
+		
+		A1=$?
+		if [ $A1 -eq 0 ]; then
+		case $MAIN in
+			"Data Query")
+				while true; do
+					. $CONF_FILE 
+					SUB=`zenity --title="Data Query" --text="Please select a task" --height=260 --width=270 --print-column="2" \
+						--column="Num" --column="Task" --list "1" "Data Acquisition" "2" "GCMT Catalog Search" "3" "GFZ Catalog Search" \
+						"4" "Go to Main Menu" "5" "Exit" 2> /dev/null`
+					Ans=$?
+					if [ $Ans -eq 0 ]; then		
+						case $SUB in
+						
+							"Data Acquisition")	
+								DATA_QUERY 
+								continue ;;
+								
+							"GCMT Catalog Search")
+								GCMT_SEARCH
+								continue ;;
+								
+							"GFZ Catalog Search")
+								GFZ_SEARCH
+								continue ;;
+								
+							"Go to Main Menu")
+									break 1 ;;
+									
+							"Exit")
+								exit ;;
+						esac
+					else
+						break 1
+					fi	
+				done ;;
+				
+			"Data Proccessing")
+					while true; do
+						. $CONF_FILE 
+						SUB1=`zenity --title="Data Processing" --text="Please select a task" --height=330 --width=340 --print-column="2" \
+						--column="Num" --column="Task" --list "1" "Process Using a New Event Info" "2" "Process Using The Prior Event Info" \
+						"3" "Merge a Set of SAC Data" "4" "Shift a Set of Mseed Data" "5" "Open The Event Info File" "6" "Open The Event Log File" \
+						"7" "Go to Main Menu" "8" "Exit" 2> /dev/null`
+							
+						A2=$?
+						if [ $A2 -eq 0 ]; then					
+							case $SUB1 in
+								"Process Using a New Event Info")
+										read -a EV_INF <<< `zenity --forms --title="Event Information" --separator=" " --add-entry="Name" \
+										--add-entry="Longitude (deg)" --add-entry="Latitude (deg)" --add-entry="Depth (km)" \
+										--add-entry="Magnitude" --add-entry="Initial SR (Hz)" --add-entry="Target SR (Hz)" \
+										--add-entry="O.Time (HH:MM:SS.ms)" --add-calendar="Origin Date" \
+										--text="Please double check your entries before proceeding" 2> /dev/null`
+										
+										if [ "${#EV_INF[@]}" -gt "0" ]; then
+										
+											FULL_SEC=${EV_INF[7]##*:}
+											cat <<- END > $EVE_INFO
+											export NAME=${EV_INF[0]}
+											export LON=${EV_INF[1]}
+											export LAT=${EV_INF[2]}
+											export DEP=${EV_INF[3]}
+											export MAG=${EV_INF[4]}
+											export YEAR=${EV_INF[8]##*/}
+											export MONTH=${EV_INF[8]%%/*}
+											export DAY=${EV_INF[8]:3:2}
+											export HOUR=${EV_INF[7]%%:*}
+											export MIN=${EV_INF[7]:3:2}
+											export FULL_SEC=${EV_INF[7]##*:}
+											export SECN=${FULL_SEC%.*}
+											export RAW_SR=${EV_INF[5]}
+											export DSP_SR=${EV_INF[6]}
+											END
+											
+											INF_CHECK=`grep -ic "=[^ ]" $EVE_INFO`
+											[ "$INF_CHECK" -ne "14" ] && 
+												zenity --error --title="Error Dialog" --text="Event info is incomplete" \
+												--height=100 2> /dev/null && continue
+											> $LOG_FILE	
+											. $EVE_INFO
+											DECIMATION
+											DATA_ANALYSIS	
+											DECO_DECI
+											DATA_TYPE	
+											break 1
+										else
+											continue
+										fi ;;
+										
+								"Process Using The Prior Event Info")
+										[ ! -f $EVE_INFO ] && 
+											zenity --error --title="Error Dialog" --text="No Event info file available" \
+											--height=100 2> /dev/null && continue
+											
+										INF_CHECK=`grep -ic "=[^ ]" $EVE_INFO`
+										[ "$INF_CHECK" -ne 14 ] && 
+											zenity --error --title="Error Dialog" --text="Event info is incomplete" \
+												--height=100 2> /dev/null &&  continue
+										
+										zenity --question --title "Approval Dialog" --text='All set ...\nDo you want to proceed?'  2> /dev/null
+										ANS=$?
+										case $ANS in
+											1) 
+												continue ;;
+											0)
+												> $LOG_FILE
+												. $EVE_INFO
+												DECIMATION
+												DATA_ANALYSIS
+												DECO_DECI	
+												DATA_TYPE	
+												break 1 ;;	
+											*)
+												zenity --error --title="Error Dialog" --text="Something went wrong! ..." \
+												--height=100  2> /dev/null &&  break 1 ;;
+										esac ;;
+											
+								"Merge a Set of SAC Data")
+										MERGE
+										continue ;;
+										
+								"Shift a Set of Mseed Data")
+										TIME_SHIFT
+										continue ;;
+										
+								"Open The Event Info File")								
+										[ ! -f $EVE_INFO ] && 
+											zenity --error --title="Error Dialog" --text "There is no event info file ..." \
+											--height=100 2> /dev/null && continue || $EDITOR $EVE_INFO & continue ;;
+								
+								"Open The Event Log File")
+										[ ! -f $LOG_FILE ] &&
+											zenity --error --title="Error Dialog" --text "No log file is available." --width=160 2> /dev/null && continue
+											
+										[ ! -s $LOG_FILE ] &&	
+											zenity --error --title="Error Dialog" --text "Log file is empty." --width=130 2> /dev/null && continue
+										 $EDITOR $LOG_FILE & continue ;;
+										 	
+								"Go to Main Menu")
+										 break 1 ;;  
+										 
+								"Exit")
+										clear && exit 0 ;;
+										
+							esac
+							
+							elif [ $A2 -eq 1 ]; then
+								 continue
+							else
+								zenity --error --title="Error Dialog" --text="Something Went Wrong!" --width=190 2> /dev/null && break 1
+						fi		
+					done ;;
+					
+			"Quick Source Study")		
+					while true; do
+						. $CONF_FILE 
+						SUB2=`zenity --title="Source study (KIWI/Pyrocko)" --text="Please select a task" --height=410 --width=300 \
+						--print-column="2" --column="Num" --column="Task" --list "1" "Automated Source Analysis" "2" "Build Synthetic Data" \
+						"3" "Plot Hudson Diagram" "4" "Plot Piercing Points" "5" "Plot a STA-EVE Map" "6" "Convert S_D_R to MT" \
+						"7" "Convert MT to S_D_R" "8" "Convert Mag to M0" "9" "Azimuthal Gap Info" "10" "Go to Main Menu" "11" "Exit" 2> /dev/null`
+							
+						A3=$?
+						if [ $A3 -eq 0 ]; then		
+							case $SUB2 in
+								"Automated Source Analysis")	
+									[ ! -f $EVE_INFO ] &&
+										zenity --error --title="Error Dialog" --text="No Event info file available! ..." width=200 2> /dev/null && break 1
+									. $EVE_INFO
+									AUTO_ANALYSIS
+									continue ;;
+									
+								"Build Synthetic Data")
+									SYNTHETIC
+									continue ;;		
+
+								"Plot Hudson Diagram")
+									HUDSON_DIAG
+									continue ;;	
+									
+								"Plot Piercing Points")
+									STATION_BEACH_B
+									continue ;;																																	
+									
+								"Plot a STA-EVE Map")
+									MAP
+									continue ;;																
+									
+								"Convert S_D_R to MT")
+									SDR_2_MT
+									continue ;;
+									
+								"Convert MT to S_D_R")
+									MT_2_SDR 
+									continue ;;		
+									
+								"Convert Mag to M0")
+									MAG_2_MOM
+									continue ;;										
+									
+								"Azimuthal Gap Info")
+									GAP
+									continue ;;																	
+																			
+								"Go to Main Menu")
+									break 1 ;;
+									
+								"Exit")
+									clear && exit 0 ;;
+									
+							esac
+						elif [ $A3 -eq 1 ]; then
+							break 1
+						else
+							zenity --error --title="Error Dialog" --text="Something Went Wrong!" --width=190 2> /dev/null && break 1
+						fi	
+					done 
+					;;				
+											
+			"Open Config File")
+					$EDITOR $CONF_FILE & continue ;;
+					
+			"Exit")
+					clear && exit 0 ;;	
+					
+		esac		
+		
+	elif [ $A1 -eq 1 ]; then
+		 continue
+	else
+		zenity --error --title="Error Dialog" --text="Something Went Wrong!" --width=190 2> /dev/null && break 1
+	fi	
+done
