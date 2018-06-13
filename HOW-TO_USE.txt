@@ -1,0 +1,148 @@
+Whats is DPSA?
+--------------
+
+DPSA is a BASH code aimed on automating some of routine tasks in data processing and
+Source analysis using KIWI tools and PYROCKO package. 
+There is no need of significant pre-processes to use this code. All you need to do is  
+To install the following Packages:
+
+
+REQUIREMENTS
+------------
+
+1) KIWI (Kinematic Waveform Inversion)
+-Main page:
+http://kinherd.org/
+-Github page: 
+https://github.com/emolch/kiwi
+
+2) Pyrocko
+-Installation page:
+https://pyrocko.org/v0.3/install/index.html
+
+3) SAC (Seismic Analysis Code)
+-Download page:
+https://ds.iris.edu/ds/nodes/dmc/software/downloads/sac/
+
+4) GMT (Version 5.x)
+-Download page:
+http://gmt.soest.hawaii.edu/projects/gmt/wiki/Download
+-Installation page:
+http://gmt.soest.hawaii.edu/projects/gmt/wiki/Installing
+
+5) Zenity (wrote on version 3.22.0)
+-Github page:
+https://github.com/GNOME/zenity
+
+6) Python package (Ipython needed)
+
+7) Obspy
+
+8) mseed2sac utility
+-Main page:
+https://ds.iris.edu/ds/nodes/dmc/software/downloads/mseed2sac/
+
+
+
+USAGE TIPS
+-----------
+***~~Before doing anything, Modify lines 17-21 of DPSA code and set the proper paths~~***
+
+
+1) Data Query -------1-1) Data Acquisition
+              -------1-2) GCMT Catalog Search
+              -------1-3) GFZ Catalog Search
+
+1-1) Data Acquisition
+-Download seismic data from different well-known networks. (using rapidown utility)
+-In the current version its limited to 'GFZ' and 'IRIS' networks.
+-Results will be stored in DATA_QUERY dir.
+
+1-2) GCMT Catalog Search
+-Search through GCMT events. Result will be stored in EVE_SEARCH dir.
+
+1-3) GFZ Catalog Search
+-Search through GFZ events. Result will be stored in EVE_SEARCH dir.
+
+
+
+2) Data Processing --------2-1) Process Using a new Event Info              
+                   --------2-2) Process Using The Prior Event Info
+                   --------2-3) Merge a Set of SAC Data
+                   --------2-4) Shift a Set of Mseed Data
+                   --------2-5) Open The Event Info File
+                   --------2-6) Open The Event Log File
+
+
+2-1) Process Using a new Event Info
+-Check your config file before start processing.
+-Use this section only if you are about to process some data from a new event.
+-Your raw data must be availabe in INPUT dir.
+-Once you import the event info, It will be saved in a file named .ev_info.
+
+2-2) Process Using The Prior Event Info
+-Process some data using the info stored in .ev_info file.
+
+2-3) Merge a Set of SAC Data
+-If you have some data need to be merged, Put them in the INPUT directory and run this section. 
+-Merged data will be stored in $MERGE/$NAME directory.
+
+2-4) Shift a Set of Mseed Data
+-Using this section, It would be possible to apply a negative/positive time shift to all mseed
+data located in the SHIFT_DATA/ directory.
+
+2-5) Open The Event Info File
+-Here is where you can check your pre-imported event information.
+
+2-6) Open The Event Log File
+-During every data processing, Some useful information will be printed to a text file named 
+.log_file. You can check it out here.
+
+
+3) Quick Source Study ---------3-1) Automated Source Analysis
+                      ---------3-2) Build Synthetic Data
+                      ---------3-3) Plot Hudson Diagram
+                      ---------3-4) Plot Piercing Points
+                      ---------3-5) Plot a STA-EVE Map
+                      ---------3-6) Convert S_D_R to MT
+                      ---------3-7) Convert MT to S_D_R
+                      ---------3-8) Convert Mag to M0
+                      ---------3-9) Azimuthal Gap Info
+
+
+3-1) Automated Source Analysis
+-Check the config file before proceeding (KIWI Configs section).
+-Here we are using the KIWI tools to perfom an automated source analysis.
+-The ".ev.info" file will be used to complete the origin time and location parameters.
+-This sectioin only tested in IRAN region.
+
+
+3-2) Build Synthetic Data
+-Before start using this feature, copy the SYNTHETIC/example.stations.info file to stations.info
+and set your stations coordinates.
+
+3-3) Plot Hudson Diagram
+-Plot Hudson diagram using the pyrocko package.
+
+3-4) Plot Piercing Points
+-Plot a focal sphere diagram including markers at positions of P/p/S/s wave ray piercing points.
+-The only thing you need to proceed this section is a velocity model in the PLOT/ST_2_FOCAL/ dir.
+
+3-5) Plot a STA-EVE Map
+-Draw a quick and dirty Map, including stations and the event location.
+-What you need before proceeding this step is header-filled SAC data in the INPUT directory.
+-These data must be available if you have processed your data before (using section 2-1/2-2).
+
+3-6) Convert S_D_R to MT
+-Simply convert a fault plain parameters (strike-dip-rake) to moment tensor.
+
+3-7) Convert MT to S_D_R
+-Reverse case of section 3-6.
+
+3-8) Convert Mag to M0
+-Convert moment magnitude to scalar moment.
+
+3-9) Azimuthal Gap Info
+-Calculate first and second azimuthal gap.
+-It uses header filled SAC data in INPUT dir.
+
