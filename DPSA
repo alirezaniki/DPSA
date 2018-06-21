@@ -48,11 +48,9 @@ CONF_FILE ()
 	#------- General Configs -------# 
 	export EDITOR=gedit
 	export IMAGE_V=gvfs-open
-	export IPYTHON=ipython
 	export ROTATE_DATA=no
 	export DATA_TYPE=mseed
 	export DATA_BUP=yes
-	export MAP_SIZE=5
 	export KEEP_PRE_KIWI_DATA=no
 	export KEEP_PRE_BUP_DATA=no
 	
