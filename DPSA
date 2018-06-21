@@ -1450,13 +1450,13 @@ while true; do    # Make it possible to return to the main menu from submenu
 					while true; do
 						. $CONF_FILE 
 						SUB1=`zenity --title="Data Processing" --text="Please select a task" --height=310 --width=290 --print-column="2" \
-						--column="Num" --column="Task" --list "1" "Process a set of raw Data" "2" "Shift a set of mseed sata" \
-						"3" "Merge a set of sac data" "4" "Open event info file" "5" "Open event log file" "6" "Go to main menu" "7" "Exit" 2> /dev/null`
+						--column="Num" --column="Task" --list "1" "Process a Set of Raw Data" "2" "Shift a Set of Mseed Data" \
+						"3" "Merge a Set of SAC Data" "4" "Open Event Info File" "5" "Open Event Log File" "6" "Go to Main Menu" "7" "Exit" 2> /dev/null`
 						
 						A2=$?
 						if [ $A2 -eq 0 ]; then					
 							case $SUB1 in
-								"Process a set of raw Data")
+								"Process a Set of Raw Data")
 										[ ! -f $EVE_INFO ] && 
 											zenity --error --title="Error Dialog" --text="No Event info file available" --height=100 2> /dev/null && continue
 											
@@ -1521,20 +1521,20 @@ while true; do    # Make it possible to return to the main menu from submenu
 												zenity --error --title="Error Dialog" --text="Something went wrong." --height=100  2> /dev/null && continue ;;
 										esac ;;
 										
-								"Shift a set of mseed sata")
+								"Shift a Set of Mseed Data")
 										TIME_SHIFT
 										continue ;;
 										
-								"Merge a set of sac data")
+								"Merge a Set of SAC Data")
 										MERGE
 										continue ;;
 										
-								"Open event info file")								
+								"Open Event Info File")								
 										[ ! -f $EVE_INFO ] && 
 											zenity --error --title="Error Dialog" --text "There is no event info file ..." \
 											--height=100 2> /dev/null && continue || $EDITOR $EVE_INFO & continue ;;
 								
-								"Open event log file")
+								"Open Event Log File")
 										[ ! -f $LOG_FILE ] &&
 											zenity --error --title="Error Dialog" --text "No log file is available." --width=160 2> /dev/null && continue
 											
@@ -1542,7 +1542,7 @@ while true; do    # Make it possible to return to the main menu from submenu
 											zenity --error --title="Error Dialog" --text "Log file is empty." --width=130 2> /dev/null && continue
 										 $EDITOR $LOG_FILE & continue ;;
 										 	
-								"Go to main menu")
+								"Go to Main Menu")
 										 break 1 ;;  
 										 
 								"Exit")
