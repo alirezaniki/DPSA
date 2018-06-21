@@ -34,8 +34,6 @@ http://gmt.soest.hawaii.edu/projects/gmt/wiki/Installing
 -Github page:
 https://github.com/GNOME/zenity
 
-6) Python package (Ipython needed)
-
 
 
 USAGE TIPS
