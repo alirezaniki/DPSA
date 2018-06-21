@@ -12,8 +12,8 @@
 # 	 
 #
 
-
 ################### Parent Directories
+
 DPSA_HOME="/home/alireza/Kiwi/DPSA"
 KIWI_WORK_DIR="/home/alireza/Kiwi/WORK"
 KIWI_RESULTS_DIR="/home/alireza/Kiwi/RESULTS"
@@ -72,11 +72,18 @@ CONF_FILE ()
 	#------- KIWI Configs -------# 
 	export GFDB_NM=db.index
 	export FULLMT=False
-	export WEIGHT_DIST=True
+	export WEIGHT_DIST=False
 	export OMIT_NOISY=True
 	export BPRISETIME=True
 	export RELOCATE=True
 	export DC_INV_MOD=invert_dmsds
+	
+	#------- MAP Configs --------#
+	export DRAW_FULL_MAP=yes
+	export MAKE_TOPO=no
+	export CPT=etopo1
+	export GRID_FILE=Globe.grd
+	export MAP_DPI=400
 	
 	EOF
 
@@ -84,7 +91,7 @@ CONF_FILE ()
 	NUM_VALS=`grep -ic "=[^ ]" $CONF_FILE`
 	
 	[ "$NUM_VALS" -ne "$NUM_LINE" ] && 
-		zenity --warning --title="Config Warning" --text="Config file is incomplete! ..." --width=200 2> /dev/null 
+		zenity --warning --title="Config Warning" --text="Config file is incomplete." --width=180 2> /dev/null 
 }	
 
 
@@ -93,12 +100,12 @@ BUILD_TREE ()
 	for dir in "INPUT" "RESP" "MERGE" "PLOT" "BACKUP" "EVE_SEARCH" "SYNTHETIC" "DATA_QUERY" "PYROCKO" "SHIFT_DATA" ; do
 		[ ! -d $dir ] && mkdir $dir && echo "${dir##*/} directory created ..." >> $LOG_FILE
 	done	
-	
-	[ -z "$( ls -A $RESP 2> /dev/null )" ] && 
-		zenity --error --title="Metadata Error" --text="No metadata data available! ..." --width=220 2> /dev/null && exit 1
-		
-	[ -z "$( ls $DPSA_HOME/.stations.dat 2> /dev/null )" ] && 
-		zenity --error --title="Info Error" --text="DPSA_HOME/.stations.dat file is missing! ..." --width=270 2> /dev/null && exit 1
+}
+
+
+round ()
+{
+echo $(printf %.$2f $(echo "scale=$2;(((10^$2)*$1)+0.5)/(10^$2)" | bc))
 }
 
 
@@ -109,7 +116,7 @@ DECIMATION ()
 	NUM_DEC=${NUM#*.}
 	
 	(( `echo "$NUM_DEC" != "00"` )) && 
-		zenity --error --title="SR Error" --width=320 --text="Bad value of initial/target sampling rate detected." 2> /dev/null && break 1
+		zenity --error --title="SR Error" --width=320 --text="Bad value of initial/target sampling rate detected." 2> /dev/null && continue	
 	
 	if [ "$NUM_INT" -lt "08" ]; then
 		DECIMATE="${NUM_INT}" 
@@ -127,6 +134,12 @@ DATA_ANALYSIS ()
 	cd $INPUT
 	[ -z "$( ls ./*$SAC 2> /dev/null )" ] && 
 		zenity --error --title="Input Error" --text="No input data available." --width=160 2> /dev/null && continue	
+		
+	[ -z "$( ls -A $RESP 2> /dev/null )" ] && 
+		zenity --error --title="Metadata Error" --text="No metadata data available." --width=180 2> /dev/null && continue	
+		
+	[ -z "$( ls $DPSA_HOME/.stations.dat 2> /dev/null )" ] && 
+		zenity --error --title="Info Error" --text="DPSA_HOME/.stations.dat file is missing." --width=270 2> /dev/null && continue		
 	
 	# Backup process
 	[ "$KEEP_PRE_BUP_DATA" = "no" ] && rm -f $BACKUP/$NAME/* 2> /dev/null
@@ -155,7 +168,7 @@ DATA_ANALYSIS ()
 		else
 			read -a DATA_KZTIME <<< `saclst kztime f *$st* | awk '{print $2}' | sort -n | uniq`
 			[ "${#DATA_KZTIME[@]}" -ne "1" ] && 
-				zenity --error --title="Data Error" --text="Some data with different KZTIME detected." --width=280 2> /dev/null && break 1
+				zenity --error --title="Data Error" --text="Some data with different KZTIME detected." --width=280 2> /dev/null && continue	
 				
 			DATA_H="${DATA_KZTIME%%:*}" 
 			DATA_S="${DATA_KZTIME##*:}" 
@@ -199,7 +212,7 @@ DECO_DECI ()
 			CM=`saclst KCMPNM f $data | awk '{print $2}'`
 			. $CONF_FILE 
 			if [ ! -f $RESP/$META_SHAPE_PZ ]; then
-				echo -e "No metadata available for $data. Moved to TRASH ..." >> $LOG_FILE 
+				echo "No metadata available for $data. Moved to TRASH ..." >> $LOG_FILE 
 				mv $data ./TRASH
 			else		
 				if [ "$DECICOUNT" -eq "1" ]; then
@@ -238,7 +251,7 @@ DECO_DECI ()
 			CM=`saclst KCMPNM f $data | awk '{print $2}'`
 			. $CONF_FILE  
 			if [ ! -f $RESP/$META_SHAPE_RESP ]; then
-				echo -e "There is no metadata for $data. Moved to TRASH ..." >> $LOG_FILE
+				echo "There is no metadata for $data. Moved to TRASH ..." >> $LOG_FILE
 				mv $data ./TRASH
 			else	
 				if [ "$DECICOUNT" -eq "1" ]; then				
@@ -283,7 +296,7 @@ ROTATE ()
 	saclst KSTNM f ./*$SAC | awk '{print $2}'| sort | uniq > ./.st.txt
 	
 	for ST in `cat ./.st.txt`; do
-		if [ \( ! -f ./*$ST*$XXE* \) -o \( ! -f ./*$ST*$XXN* \) ]; then
+		if [ \( -z ./*$ST*$XXE* \) -o \( ! -f ./*$ST*$XXN* \) ]; then
 			echo -e "$ST station Moved to TRASH, $XXN or $XXE component is missing." >> $LOG_FILE
 			mv *$ST* ./TRASH 
 		else	
@@ -338,15 +351,14 @@ ROTATE ()
 
 SAC2MSEED ()
 {
+	[ ! -f $PYROCKO/sac_2_mseed.py ] &&
+		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1	
 	for data in `ls ./*$SAC`; do
-	STA=`saclst KSTNM f $data   | awk '{print $2}'`
-	CMP=`saclst KCMPNM f $data  | awk '{print $2}'`
-	$IPYTHON <<- EOF
-	from obspy import read
-	st=read("$data")[0]
-	st.write("DISPL.$STA.$CMP",format="MSEED")
-	exit
-	EOF
+		STA=`saclst KSTNM f $data   | awk '{print $2}'`
+		CMP=`saclst KCMPNM f $data  | awk '{print $2}'`
+		out_data="DISPL.$STA.$CMP"
+		sed -i "/out_filename =/c\		out_filename = '$out_data'" $PYROCKO/sac_2_mseed.py 2> /dev/null
+		python $PYROCKO/sac_2_mseed.py $data 
 	done 
 }
 
@@ -354,7 +366,7 @@ SAC2MSEED ()
 DATA_TYPE ()
 {
 	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
-		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && break 1
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
 	
 	[ ! -d  $KIWI_DATA_DIR/$NAME ] && mkdir $KIWI_DATA_DIR/$NAME
 	[ "$KEEP_PRE_KIWI_DATA" = "no" ] && rm -f $KIWI_DATA_DIR/$NAME/* 2> /dev/null
@@ -391,11 +403,11 @@ MERGE ()
 {
 	cd $INPUT
 	[ -z "$(ls ./*$SAC)" ] && 
-		zenity --error --title="Data Error" --text="There is no input data to merge." --width=210 2> /dev/null && break 1
+		zenity --error --title="Data Error" --text="There is no input data to merge." --width=210 2> /dev/null && continue
 	
 	read -a delta <<< `saclst DELTA f ./*$SAC | awk '{print $2}'| sort -n | uniq`
 	[ "${#delta[@]}" -ne "1" ] && 
-		zenity --error --title="Header Error" --text="Some different Sampling rates detected." --height=100 2> /dev/null && break 1
+		zenity --error --title="Header Error" --text="Some different Sampling rates detected." --height=100 2> /dev/null && continue
 	
 	Name=`zenity --forms --title="Merge Question" --text="Please enter a name to save merged data" --add-entry="Enter Name" 2> /dev/null`	
 	
@@ -435,13 +447,16 @@ MERGE ()
 
 
 GAP ()
-{
-	cd $INPUT
-	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
-		zenity --error --title="Data Error" --text="No data available to process! Check your input directory ..." --height=100 2> /dev/null && break 1
+{		
+	[ \( ! -d $KIWI_RESULTS_DIR/$NAME \) -o \( ! -f  $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt \) ] &&
+		zenity --error --title="Error Dialog" --text="You must run a source analysis first." --width=260 2> /dev/null && continue	
 		
+	read -a NUM <<< `grep -n "disaz" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | cut -f 1 -d :`
+	L1=`echo "${NUM[0]} + 1" | bc -l`
+	L2=`echo "${NUM[1]} - 1" | bc -l`
+	read -r -a AZI <<< `sed -n "$L1,"$L2"p" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | awk '{print $10}' | sort -nr | uniq`
+
 	# FIRST AZIMUTHAL GAP
-	read -r -a AZI <<< `saclst AZ f ./*$SAC 2> /dev/null | awk '{print $2}' | sort -r -n | uniq`
 	NUM_ST=${#AZI[@]}
 	for ((i=0; i < $((NUM_ST - 1)); i+=1 )); do 
 		DIFF[$i]=`echo "scale=2; ${AZI[$i]} - ${AZI[$i+1]}" | bc -l`
@@ -468,49 +483,260 @@ GAP ()
 	
 	SECOND_G=`echo "${SEC_AZ[@]}" | tr " " "\n" | sort -nr | head -1`
 	echo "First AG= $FIRST_G deg\nSecond AG= $SECOND_G deg" >> $LOG_FILE
-	zenity --info --title "Gap Info Dialog" \
-		--text="First Azimuthal Gap (deg)= $FIRST_G\nSecond Azimuthal Gap (deg)= $SECOND_G" --width=270 2> /dev/null
+	zenity --info --title="Gap Info" --text="First Azimuthal Gap = $FIRST_G deg\nSecond Azimuthal Gap = $SECOND_G deg" --width=260 2> /dev/null
 }	
 
 
 MAP ()
 {
-	[ ! -f $EVE_INFO ] &&
-		zenity --error --title="Error Dialog" --text="No Event info file available! ..." width=200 2> /dev/null && continue
-	
+	cd $PLOT
 	. $EVE_INFO
-	cd $INPUT
-	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
-		zenity --error --title="Data Error" --text="No data available to process." --width=185 2> /dev/null && continue
-
-	MAX_D=`saclst DIST f ./*$SAC | sort -k 2 -nr | awk 'NR==1 {print $2}'` 
-	if (( `echo "$MAX_D <= 300" | bc -l` )); then
-		LAT_I=0.2 && LON_I=0.3 
-	elif (( `echo "$MAX_D > 300" | bc -l` )) && (( `echo "$MAX_D <= 700" | bc -l` )); then
-		LAT_I=0.5 && LON_I=0.7
-	else
-		LAT_I=0.7 && LON_I=1.0
-	fi	
+	[ ! -d $KIWI_RESULTS_DIR/$NAME ] &&
+		zenity --error --title="Error Dialog" --text="You must run a source analysis first." --width=260 2> /dev/null && continue
 		
-	LON_MAX=`saclst STLO f ./*$SAC | sort -k 2 -nr | awk 'NR==1 {print $2}'` 
-	LON_MIN=`saclst STLO f ./*$SAC | sort -k 2 -n | awk 'NR==1 {print $2}'` 
-	LAT_MAX=`saclst STLA f ./*$SAC | sort -k 2 -nr | awk 'NR==1 {print $2}'` 
-	LAT_MIN=`saclst STLA f ./*$SAC | sort -k 2 -n | awk 'NR==1 {print $2}'`  
+	if [ -f $KIWI_RESULTS_DIR/$NAME/step2.ptsolution.gmt ]; then 
+		Focal_inf="$KIWI_RESULTS_DIR/$NAME/step2.meca.dat"
+		EQ_INFO="$KIWI_RESULTS_DIR/$NAME/step2.earthquakeinfo.dat"
+		INV="MT"
+			elif [ -f $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt ]; then 
+		Focal_inf="$KIWI_RESULTS_DIR/$NAME/step1.meca.dat"
+		EQ_INFO="$KIWI_RESULTS_DIR/$NAME/step1.earthquakeinfo.dat"
+		INV="DC"
+	else
+		zenity --error --title="Error Dialog" --text="No inversion info file exists." --width=200 2> /dev/null && continue
+	fi		
+	
+	awk '{print $1,$2}' $KIWI_RESULTS_DIR/$NAME/stations.table | sort -n | uniq > ./.stations.info
+	
+	STR=`awk '{print $4}' $Focal_inf`
+	DIP=`awk '{print $5}' $Focal_inf`
+	RAK=`awk '{print $6}' $Focal_inf`
+		
+	LON_MAX=`cat ./.stations.info | awk '{print $2}' | sort -nr | head -1` 
+	LON_MAX=`round $LON_MAX 1`
+	LON_MIN=`cat ./.stations.info | awk '{print $2}' | sort -nr | tail -1`
+	LON_MIN=`round $LON_MIN 1`
+	LAT_MAX=`cat ./.stations.info | awk '{print $1}' | sort -nr | head -1` 
+	LAT_MAX=`round $LAT_MAX 1`
+	LAT_MIN=`cat ./.stations.info | awk '{print $1}' | sort -nr | tail -1` 
+	LAT_MIN=`round $LAT_MIN 1`
+	
+	read -a NUM <<< `grep -n "disaz" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | cut -f 1 -d :`
+	L1=`echo "${NUM[0]} + 1" | bc -l`
+	L2=`echo "${NUM[1]} - 1" | bc -l`
+	MAX_D=`sed -n "$L1,"$L2"p" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | awk '{print $9}' | sort -nr | head -1`
+	
+	if (( `echo "$MAX_D <= 800" | bc -l` )); then
+		LAT_I=2.5 ; LON_I=3.0 ; SCAL_SZ=150 
+	elif (( `echo "$MAX_D > 800" | bc -l` )) && (( `echo "$MAX_D <= 1400" | bc -l` )); then
+		LAT_I=4.0 ; LON_I=5.0 ; SCAL_SZ=200
+	else
+		LAT_I=4.0 ; LON_I=5.0 ; SCAL_SZ=250
+	fi		
+	
 	LON_MAX=`echo "$LON_MAX + $LON_I" | bc -l`
 	LON_MIN=`echo "$LON_MIN - $LON_I" | bc -l`
 	LAT_MAX=`echo "$LAT_MAX + $LAT_I" | bc -l`
 	LAT_MIN=`echo "$LAT_MIN - $LAT_I" | bc -l`
-	(( `echo "$LON >= $LON_MAX" | bc -l` )) && LON_MAX=`echo "$LON + $LON_I" | bc -l` 
-	(( `echo "$LON <= $LON_MIN" | bc -l` )) && LON_MIN=`echo "$LON - $LON_I" | bc -l` 
-	(( `echo "$LAT >= $LAT_MAX" | bc -l` )) && LAT_MAX=`echo "$LAT + $LAT_I" | bc -l` 
-	(( `echo "$LAT <= $LAT_MIN" | bc -l` )) && LAT_MIN=`echo "$LAT - $LAT_I" | bc -l`
+		
+	SCALE_LON=`echo "$LON_MAX - ($LON_I / 3)" | bc -l`
+	SCALE_LAT=`echo "$LAT_MIN + ($LAT_I / 3)" | bc -l`
 	
-	saclst STLO STLA f ./*SAC | awk '{print $2,$3}' | sort -n | uniq  > ./.st_coordinate
-	gmt pscoast -W1p,black -R"$LON_MIN"/"$LON_MAX"/"$LAT_MIN"/"$LAT_MAX" -JM"$MAP_SIZE"i -A5000  -Xc -Yc -Na -Ba -Glightbrown -Slightblue -K 2> /dev/null > $PLOT/$NAME.ps
-	gmt psxy -R -J -W0.5,black -i0,1 ./.st_coordinate -St0.35,black -Gblack -K -O 2> /dev/null >> $PLOT/$NAME.ps
-	gmt psxy -R -J -W0.5,red -i0,1 -Sa0.4,red -Gred -K -O 2> /dev/null <<- END >> $PLOT/$NAME.ps
+	# Construct a Map
+	if [ "$MAKE_TOPO" = "yes" ]; then
+		[ ! -f $PLOT/$GRID_FILE ] && 
+			zenity --error --title="Error Dialog" --text="No gridded data available." --width=170 2> /dev/null && continue
+			
+		gmt grdcut $GRID_FILE -R"$LON_MIN"/"$LON_MAX"/"$LAT_MIN"/"$LAT_MAX" -G"$NAME".grd
+		gmt grdgradient "$NAME".grd -Ne0.8 -A90 -fg  -G"$NAME"_i.grd
+		gmt makecpt -C"$CPT" > topo.cpt
+		gmt grdimage "$NAME".grd -JM6i -I"$NAME"_i.grd -Ei"$MAP_DPI" -X1.5 -Y1.5 -Ba -C"$CPT" -K  > $NAME.ps
+		gmt pscoast -W0.5p,black -R -J -Dh -Na -L"$SCALE_LON"/"$SCALE_LAT"/"$LAT"/"$SCAL_SZ" -A3000 --MAP_TICK_PEN_PRIMARY=0.1c -O -K 2> /dev/null >> $NAME.ps		
+	else
+		gmt pscoast -W0.5p,black -R"$LON_MIN"/"$LON_MAX"/"$LAT_MIN"/"$LAT_MAX" -JM6i -Dh -Na -L"$SCALE_LON"/"$SCALE_LAT"/"$LAT"/"$SCAL_SZ" -A3000 \
+		--MAP_TICK_PEN_PRIMARY=0.1c -K -Ba -Na -Gwhite -Slightblue > $NAME.ps	
+	fi	
+				
+	gmt psxy -W0.1,black -R -J -i1,0 ./.stations.info -St0.17i -Gblack -K -O 2> /dev/null >> $NAME.ps
+	gmt psxy -W0.1,red -R -J -i0,1 -Sa0.2i -Gred -K -O 2> /dev/null <<- EOF >> $NAME.ps
 	$LON $LAT
-	END
+	EOF
+	
+	if [ "$INV" = "MT" ]; then
+		BootsT="$KIWI_RESULTS_DIR/$NAME/bootstrap.dat"
+		RN=`grep "REL LAT N" $BootsT | awk '{print $4}'`    # Rel Lat in km
+		RN=`echo "scale=2; $RN / 110.574" | bc -l`          # Rel Lat in deg
+		CENT_LAT=`echo "$LAT + $RN" | bc -l`                # Centroid Lat
+		
+		RE=`grep "REL LON E" $BootsT | awk '{print $4}'`	  # Rel Lon in km
+		CENT_LAT_RAD=`echo "$CENT_LAT * 3.14 / 180"`        # Centroid Lat in Rad
+		COS_LAT=`bc -l <<< "scale=2; c ($CENT_LAT_RAD)"`    # Cosin of Centroid Lat
+		RE=`echo "$RE / (111.32 * $COS_LAT)" | bc -l`       # Rel Lon in deg
+		CENT_LON=`echo "$LON + $RE" | bc -l`                # Centroid Lat
+		
+		gmt psxy -W0.1,green -R -J -i0,1 -Sa0.2i -Ggreen -K -O 2> /dev/null <<- EOF >> $NAME.ps
+		$CENT_LON $CENT_LAT
+		EOF
+	fi	
+	
+	if [ "$INV" = "MT" ]; then
+		# Legend
+		gmt pslegend -R -J -F -DjBR+w2i/1.3i+jBL+l1.2+o0.7i/0i -C0.1i/0.1i -O -K <<- EOF >> $NAME.ps
+		G -0.1i
+		H 14 Times-Roman Map Legend
+		G 0.0i
+		D 0.2i 1p
+		N 1
+		G 0.1i
+		S 0.1i a 0.16i red 0.25p,red 0.3i  Epicenter Loc
+		G 0.1i
+		S 0.1i a 0.16i green 0.25p,green 0.3i  Centroid Loc
+		G 0.1i	
+		S 0.1i t 0.16i black 0.25p 0.3i Station
+		G 0.1i
+		EOF
+	else
+		# Legend
+		gmt pslegend -R -J -F -DjBR+w2i/1i+jBL+l1.2+o0.7i/0i -C0.1i/0.1i -O -K <<- EOF >> $NAME.ps
+		G -0.1i
+		H 14 Times-Roman Map Legend
+		G 0.0i
+		D 0.2i 1p
+		N 1
+		G 0.1i
+		S 0.1i a 0.16i red 0.25p,red 0.3i  Epicenter Loc
+		G 0.1i	
+		S 0.1i t 0.16i black 0.25p 0.3i Station
+		G 0.1i
+		EOF
+	fi
+	
+	read -r -a AZI <<< `sed -n "$L1,"$L2"p" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | awk '{print $10}' | sort -nr | uniq`
+	NUM_ST=${#AZI[@]}
+	for ((i=0; i < $((NUM_ST - 1)); i+=1 )); do 
+		DIFF[$i]=`echo "scale=2; ${AZI[$i]} - ${AZI[$i+1]}" | bc -l`
+	done
+	DIFF+=(`echo "scale=2; (360 - ${AZI[0]}) + ${AZI[((NUM_ST-1))]}" | bc -l`)
+	FIRST_G=`echo ${DIFF[@]} | tr " " "\n" | sort -nr | head -1`	
+	
+	if [ "$INV" = "DC" ]; then
+		sed -i 's/N//' $Focal_inf 
+		S1=`grep "3 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		D1=`grep "3 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		R1=`grep "3 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		S2=`grep "5 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		D2=`grep "5 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		R2=`grep "5 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		S3=`grep "7 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		D3=`grep "7 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		R3=`grep "7 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		S4=`grep "9 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		D4=`grep "9 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		R4=`grep "9 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
+		M0=`grep "3 12 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
+		Mw=`grep "3 11 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`	
+		DP=`grep "3 10 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
+		MF=`grep "3 8 10 0 0 5" $EQ_INFO  | cut -f 7 -d " "`	
+		BP=`grep "3 3 10 0 0 5" $EQ_INFO  | cut -f 7- -d " "`	
+				
+		gmt pstext -X17 -Y9 -JX10/6 -R0/14/0/21 -K -O 2> /dev/null <<- EOF >> $NAME.ps	
+		0 18 13 0 0 5 Epicenter 
+		3 18 13 0 0 5 $LAT N $LON E
+		0 16 13 0 0 5 Strike
+		0 14 13 0 0 5 Dip
+		0 12 13 0 0 5 Rake
+		3 16 13 0 0 5 $S1
+		3 14 13 0 0 5 $D1
+		3 12 13 0 0 5 $R1	
+		5 16 13 0 0 5 $S2
+		5 14 13 0 0 5 $D2
+		5 12 13 0 0 5 $R2	
+		7 16 13 0 0 5 $S3
+		7 14 13 0 0 5 $D3
+		7 12 13 0 0 5 $R3	
+		9 16 13 0 0 5 $S4
+		9 14 13 0 0 5 $D4
+		9 12 13 0 0 5 $R4	
+		0 10 13 0 0 5 M@-0@-
+		3 10 13 0 0 5 $M0
+		0 08 13 0 0 5 M@-w@-
+		3 08 13 0 0 5 $Mw
+		0 06 13 0 0 5 Depth
+		3 06 13 0 0 5 $DP
+		0 04 13 0 0 5 DC Misfit
+		3 04 13 0 0 5 $MF
+		0 02 13 0 0 5 BP Used
+		3 02 13 0 0 5 $BP
+		EOF
+		gmt psmeca $Focal_inf -W1,black -JX3/3 -R-1/1/-1/1 -Sa11,black -T0 -X0.1 -Y-2.8 -K -O 2> /dev/null >> $NAME.ps
+		gmt pstext -W.0.2,black -C0.2c/0.2c -Y8.4.5 -X-18 -JX8/3 -R-1/8/-1/2 -K -O 2> /dev/null <<- EOF >> $NAME.ps
+		0 00 11 0 0 5 Gap = $FIRST_G deg
+		0 0.7 11 0 0 5 No. St = $NUM_ST
+		EOF
+		
+	else
+	
+		MF1=`grep "3 8 10 0 0 5" $KIWI_RESULTS_DIR/$NAME/step1.earthquakeinfo.dat | cut -f 7 -d " "`
+		BootsT="$KIWI_RESULTS_DIR/$NAME/bootstrap.dat"
+		sed -i 's/N//' $Focal_inf 
+		S1=`grep "3 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		D1=`grep "3 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		R1=`grep "3 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		S2=`grep "5 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		D2=`grep "5 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+		R2=`grep "5 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`	
+		M0=`grep "3 12 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
+		Mw=`grep "3 11 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`	
+		DP=`grep "3 10 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
+		MF=`grep "3 8 10 0 0 5" $EQ_INFO  | cut -f 7 -d " "`			
+		BP=`grep "3 3 10 0 0 5" $EQ_INFO  | cut -f 7- -d " "`	
+		RN=`grep "REL LAT N" $BootsT | awk '{print $4}'`
+		RE=`grep "REL LON E" $BootsT | awk '{print $4}'`
+		RT=`grep "REL TIME"  $BootsT | awk '{print $3}'`
+		(( `echo "$RN < 0" | bc -l` )) && RNM=S && RN=`echo "$RN * -1" | bc -l` || RNM=N
+		(( `echo "$RE < 0" | bc -l` )) && REM=W && RE=`echo "$RE * -1" | bc -l` || REM=E
+		
+		gmt pstext -X17 -Y7.5 -JX10/7 -R0/14/0/32 -K -O 2> /dev/null <<- END >> $NAME.ps	
+		0 30 13 0 0 5 Epicenter 
+		3 30 13 0 0 5 $LAT N $LON E
+		0 28 13 0 0 5 Moment Tensor Solutions:
+		0 26 13 0 0 5 Strike
+		0 24 13 0 0 5 Dip
+		0 22 13 0 0 5 Rake
+		3 26 13 0 0 5 $S1
+		3 24 13 0 0 5 $D1
+		3 22 13 0 0 5 $R1	
+		5 26 13 0 0 5 $S2
+		5 24 13 0 0 5 $D2
+		5 22 13 0 0 5 $R2	
+		0 20 13 0 0 5 M@-0@-
+		3 20 13 0 0 5 $M0
+		0 18 13 0 0 5 M@-w@-
+		3 18 13 0 0 5 $Mw
+		0 16 13 0 0 5 Depth
+		3 16 13 0 0 5 $DP
+		0 14 13 0 0 5 DC Misfit
+		3 14 13 0 0 5 $MF1
+		0 12 13 0 0 5 Rel Lon 
+		3 12 13 0 0 5 $RE km $REM 
+		0 10 13 0 0 5 Rel Lat 
+		3 10 13 0 0 5 $RN km $RNM 
+		0 08 13 0 0 5 Rel Time
+		3 08 13 0 0 5 $RT s			
+		0 06 13 0 0 5 MT Misfit
+		3 06 13 0 0 5 $MF			
+		0 04 13 0 0 5 BP Used
+		3 04 13 0 0 5 $BP					
+		END
+
+		gmt psmeca $Focal_inf -W1,black -JX3/3 -R-1/1/-1/1 -Sa11,black -Gblack -X0.1 -Y-2.8 -K -O 2> /dev/null >> $NAME.ps
+		
+		gmt pstext -W.0.2,black -C0.2c/0.2c -Y10 -X-18 -JX8/3 -R-1/8/-1/2 -K -O <<- EOF >> $NAME.ps
+		0 00 11 0 0 5 Gap = $FIRST_G deg
+		EOF
+	
+	fi
+		
 	rm ./gmt.history 2> /dev/null
 	$IMAGE_V $PLOT/$NAME.ps 2> /dev/null
 }	
@@ -569,9 +795,11 @@ DATA_QUERY ()
 		DT=`grep "time" ./.events.info | cut -f 2 -d " "` 
 		NM=`grep "region" ./.events.info | cut -f 2- -d " "`
 		
-		SITE="geofon,iris"
+		SITE="geofon,iris,orfeus"
 		rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
+	
 	else	
+	
 		unset LIS
 		for ((i=1; i <= "$ev_num"; i++)); do
 			EVE=`grep -m $i -A 7 'pf.Event' .events.info | tail -7`
@@ -595,7 +823,7 @@ DATA_QUERY ()
 			TM=`echo $EVE | awk '{print $2}' | cut -f 2 -d =`
 			NM=`echo $EVE | awk '{print $7}' | cut -f 2- -d "="`
 		
-			SITE="geofon,iris"
+			SITE="geofon,iris,orfeus"
 			rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
 		else
 			zenity --error --title="Error Dialog" --text="Process canceled." --width=150 2> /dev/null && continue
@@ -610,7 +838,7 @@ TIME_SHIFT ()
 	[ ! -f $PYROCKO/time_shift.py ] &&
 		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 		
-	[ -z "`ls DISPL* 2> /dev/null`" ] &&
+	[ -z "`ls -p | grep -v /  2> /dev/null`" ] &&
 		zenity --error --title="Error Dialog" --text="No data available to process." --width=200 2> /dev/null && continue
 		
 	TIME=`zenity --title="Time Shift Scale" --scale --text="Select a time shift in second" --value=1 \
@@ -619,10 +847,10 @@ TIME_SHIFT ()
 	
 	sed -i "/tr.shift/c\tr.shift ($TIME)" $PYROCKO/time_shift.py
 	
-	for data in `ls *`; do
+	for data in `ls -p | grep -v /`; do
 		sed -i "/trace =/c\trace = io.load('$data')" $PYROCKO/time_shift.py 
 		sed -i "/io.save/c\io.save (tr, 'SH.$data')" $PYROCKO/time_shift.py 
-		python $PYROCKO/time_shift.py 
+		python $PYROCKO/time_shift.py
 	done
 	mkdir SHIFTED_DATA 2> /dev/null
 	mv SH.* ./SHIFTED_DATA
@@ -682,7 +910,7 @@ SYNTHETIC ()
 		NUM_LINE=`grep -c "=" ./.event.info`
 		NUM_VALS=`grep -ic "=[^ ]" ./.event.info`
 		[ \( ! -f ./.event.info \) -o \( "$NUM_LINE" -ne "$NUM_VALS" \) ] &&
-			zenity --error --title="Info Error" --text="Check the event info file." --width=170 2> /dev/null && continue
+			zenity --error --title="Info Error" --text="Event info file is incomplete." --width=190 2> /dev/null && continue
 		
 		. ./.event.info
 	fi
@@ -1024,7 +1252,7 @@ KIWI_STEP1 ()
 {
 	NM=`echo $NAME | tr '[:upper:]' '[:lower:]'` 
 	if (( `echo "$MAX_DIS <= 600" | bc -l` )); then
-		LEN_PLOT=300; PLOT_ST=60
+		LEN_PLOT=300; PLOT_ST=100
 	else
 		LEN_PLOT=450; PLOT_ST=100
 	fi	
@@ -1065,6 +1293,7 @@ KIWI_STEP1 ()
 	sed -i "/\<SEC\>/c\SEC        $SECN" $KIWI_WORK_DIR/$File  2> /dev/null
 	sed -i "/\<DEPTH_1\>/c\DEPTH_1          $DEP" $KIWI_WORK_DIR/$File  2> /dev/null
 	sed -i "/\<DEPTH_2\>/c\DEPTH_2          $DEP" $KIWI_WORK_DIR/$File  2> /dev/null
+	sed -i "/\<DATA_FORMAT\>/c\DATA_FORMAT      $DATA_TYPE" $KIWI_WORK_DIR/$File  2> /dev/null
 }
 
 
@@ -1112,10 +1341,9 @@ KIWI_STEP3 ()
 AUTO_ANALYSIS ()
 {
 	[ \( ! -d $KIWI_DATA_DIR/$NAME \) -o \( -z "$(ls $KIWI_DATA_DIR/$NAME/DISPL* 2> /dev/null)" \) ] &&  
-		zenity --error --title "Data Error" --text="No data available to process! ..." width=200  2> /dev/null && continue
+		zenity --error --title "Data Error" --text="No data available to process." --width=200  2> /dev/null && continue
 	
 	[ ! -f $KIWI_DATA_DIR/$NAME/stations.dat ] && cat $DPSA_HOME/.stations.dat | awk '{print $1,$2,$3,$4}' > $KIWI_DATA_DIR/$NAME/stations.dat
-	[ ! -d $KIWI_RESULTS_DIR/$NAME ] && mkdir $KIWI_RESULTS_DIR/$NAME || rm -f $KIWI_RESULTS_DIR/$NAME/* 2> /dev/null
 	
 	GF_DIR=`zenity --file-selection --title="Please set the path to your Greens Functions directory" --directory 2> /dev/null`
 	[ -z $GF_DIR ] && continue
@@ -1141,6 +1369,7 @@ AUTO_ANALYSIS ()
 
 	cd $KIWI_WORK_DIR
 	./rapidinv "$File" 
+	[ "$DRAW_FULL_MAP" = "yes" ] && MAP
 }
 
 
@@ -1154,11 +1383,32 @@ BUILD_TREE
 trap 'echo "Operation Not Allowed!"' INT TERM
 XXE="$CHAN"E; XXN="$CHAN"N; XXZ="$CHAN"Z; XXR="$CHAN"R; XXT="$CHAN"T
 
+while getopts "a" options; do
+	case "$options" in
+		a)
+			[ ! -f $EVE_INFO ] && 
+				zenity --error --title="Error Dialog" --text="No Event info file available" --height=100 2> /dev/null && continue		
+					
+			INF_CHECK=`grep -ic "=[^ ]" $EVE_INFO`
+			[ "$INF_CHECK" -ne "14" ] && 
+				zenity --error --title="Error Dialog" --text="Event info is incomplete" --height=100 2> /dev/null && continue		
+		
+			> $LOG_FILE
+			. $EVE_INFO
+			DECIMATION
+		  DATA_ANALYSIS
+			DECO_DECI	
+			DATA_TYPE	
+			AUTO_ANALYSIS
+			exit 0
+		esac
+done			
 
-while true; do    # Make it possible to return to main menu from submenu
-	MAIN=`zenity --title="DPSA Main Menu" --text="Please select a task" --height=260 --width=300 --print-column="2" --column="Num" \
-		--column="Task" --list "1" "Data Query" "2" "Data Proccessing" "3" "Quick Source Study" "4" "Open Config File" \
-		"5" "Exit" 2> /dev/null`
+
+while true; do    # Make it possible to return to the main menu from submenu
+	MAIN=`zenity --title="DPSA Main Menu" --text="Please select a task" --height=280 --width=300 --print-column="2" --column="Num" \
+		--column="Task" --list "1" "Data Query" "2" "Data Proccessing" "3" "Quick Source Study" "4" "Pyrocko Toolbox" "5" "Open Config File" \
+		"6" "Exit" 2> /dev/null`
 		
 		A1=$?
 		if [ $A1 -eq 0 ]; then
@@ -1167,13 +1417,13 @@ while true; do    # Make it possible to return to main menu from submenu
 				while true; do
 					. $CONF_FILE 
 					SUB=`zenity --title="Data Query" --text="Please select a task" --height=260 --width=270 --print-column="2" \
-						--column="Num" --column="Task" --list "1" "Data Acquisition" "2" "GCMT Catalog Search" "3" "GFZ Catalog Search" \
+						--column="Num" --column="Task" --list "1" "Seismic Data Acquisition" "2" "GCMT Catalog Search" "3" "GFZ Catalog Search" \
 						"4" "Go to Main Menu" "5" "Exit" 2> /dev/null`
 					Ans=$?
 					if [ $Ans -eq 0 ]; then		
 						case $SUB in
 						
-							"Data Acquisition")	
+							"Seismic Data Acquisition")	
 								DATA_QUERY 
 								continue ;;
 								
@@ -1199,98 +1449,92 @@ while true; do    # Make it possible to return to main menu from submenu
 			"Data Proccessing")
 					while true; do
 						. $CONF_FILE 
-						SUB1=`zenity --title="Data Processing" --text="Please select a task" --height=330 --width=340 --print-column="2" \
-						--column="Num" --column="Task" --list "1" "Process Using a New Event Info" "2" "Process Using The Prior Event Info" \
-						"3" "Merge a Set of SAC Data" "4" "Shift a Set of Mseed Data" "5" "Open The Event Info File" "6" "Open The Event Log File" \
-						"7" "Go to Main Menu" "8" "Exit" 2> /dev/null`
-							
+						SUB1=`zenity --title="Data Processing" --text="Please select a task" --height=310 --width=290 --print-column="2" \
+						--column="Num" --column="Task" --list "1" "Process a set of raw Data" "2" "Shift a set of mseed sata" \
+						"3" "Merge a set of sac data" "4" "Open event info file" "5" "Open event log file" "6" "Go to main menu" "7" "Exit" 2> /dev/null`
+						
 						A2=$?
 						if [ $A2 -eq 0 ]; then					
 							case $SUB1 in
-								"Process Using a New Event Info")
-										read -a EV_INF <<< `zenity --forms --title="Event Information" --separator=" " --add-entry="Name" \
-										--add-entry="Longitude (deg)" --add-entry="Latitude (deg)" --add-entry="Depth (km)" \
-										--add-entry="Magnitude" --add-entry="Initial SR (Hz)" --add-entry="Target SR (Hz)" \
-										--add-entry="O.Time (HH:MM:SS.ms)" --add-calendar="Origin Date" \
-										--text="Please double check your entries before proceeding" 2> /dev/null`
-										
-										if [ "${#EV_INF[@]}" -gt "0" ]; then
-										
-											FULL_SEC=${EV_INF[7]##*:}
-											cat <<- END > $EVE_INFO
-											export NAME=${EV_INF[0]}
-											export LON=${EV_INF[1]}
-											export LAT=${EV_INF[2]}
-											export DEP=${EV_INF[3]}
-											export MAG=${EV_INF[4]}
-											export YEAR=${EV_INF[8]##*/}
-											export MONTH=${EV_INF[8]%%/*}
-											export DAY=${EV_INF[8]:3:2}
-											export HOUR=${EV_INF[7]%%:*}
-											export MIN=${EV_INF[7]:3:2}
-											export FULL_SEC=${EV_INF[7]##*:}
-											export SECN=${FULL_SEC%.*}
-											export RAW_SR=${EV_INF[5]}
-											export DSP_SR=${EV_INF[6]}
-											END
-											
-											INF_CHECK=`grep -ic "=[^ ]" $EVE_INFO`
-											[ "$INF_CHECK" -ne "14" ] && 
-												zenity --error --title="Error Dialog" --text="Event info is incomplete" \
-												--height=100 2> /dev/null && continue
-											> $LOG_FILE	
-											. $EVE_INFO
-											DECIMATION
-											DATA_ANALYSIS	
-											DECO_DECI
-											DATA_TYPE	
-											break 1
-										else
-											continue
-										fi ;;
-										
-								"Process Using The Prior Event Info")
+								"Process a set of raw Data")
 										[ ! -f $EVE_INFO ] && 
-											zenity --error --title="Error Dialog" --text="No Event info file available" \
-											--height=100 2> /dev/null && continue
+											zenity --error --title="Error Dialog" --text="No Event info file available" --height=100 2> /dev/null && continue
 											
 										INF_CHECK=`grep -ic "=[^ ]" $EVE_INFO`
 										[ "$INF_CHECK" -ne 14 ] && 
-											zenity --error --title="Error Dialog" --text="Event info is incomplete" \
-												--height=100 2> /dev/null &&  continue
-										
-										zenity --question --title "Approval Dialog" --text='All set ...\nDo you want to proceed?'  2> /dev/null
+											zenity --error --title="Error Dialog" --text="Event info is incomplete" --height=100 2> /dev/null && continue
+												
+										zenity --question --title "Info Dialog" --text='Load the prior event info?' --width=200  2> /dev/null
 										ANS=$?
 										case $ANS in
-											1) 
-												continue ;;
-											0)
+											0) 
 												> $LOG_FILE
 												. $EVE_INFO
 												DECIMATION
 												DATA_ANALYSIS
 												DECO_DECI	
 												DATA_TYPE	
-												break 1 ;;	
-											*)
-												zenity --error --title="Error Dialog" --text="Something went wrong! ..." \
-												--height=100  2> /dev/null &&  break 1 ;;
-										esac ;;
-											
-								"Merge a Set of SAC Data")
-										MERGE
-										continue ;;
+												continue ;;
+											1)
+												read -a EV_INF <<< `zenity --forms --title="Event Information" --separator=" " --add-entry="Name" \
+												--add-entry="Longitude (deg)" --add-entry="Latitude (deg)" --add-entry="Depth (km)" \
+												--add-entry="Magnitude" --add-entry="Initial SR (Hz)" --add-entry="Target SR (Hz)" \
+												--add-entry="O.Time (HH:MM:SS.ms)" --add-calendar="Origin Date" \
+												--text="Please double check your entries before proceeding" 2> /dev/null`
 										
-								"Shift a Set of Mseed Data")
+												if [ "${#EV_INF[@]}" -gt "0" ]; then
+										
+													FULL_SEC=${EV_INF[7]##*:}
+													cat <<- END > $EVE_INFO
+													export NAME=${EV_INF[0]}
+													export LON=${EV_INF[1]}
+													export LAT=${EV_INF[2]}
+													export DEP=${EV_INF[3]}
+													export MAG=${EV_INF[4]}
+													export YEAR=${EV_INF[8]##*/}
+													export MONTH=${EV_INF[8]%%/*}
+													export DAY=${EV_INF[8]:3:2}
+													export HOUR=${EV_INF[7]%%:*}
+													export MIN=${EV_INF[7]:3:2}
+													export FULL_SEC=$FULL_SEC
+													export SECN=${FULL_SEC%.*}
+													export RAW_SR=${EV_INF[5]}
+													export DSP_SR=${EV_INF[6]}
+													END
+													
+													INF_CHECK=`grep -ic "=[^ ]" $EVE_INFO`
+													[ "$INF_CHECK" -ne "14" ] && 
+														zenity --error --title="Error Dialog" --text="Event info is incomplete" --height=100 2> /dev/null && continue
+														
+													> $LOG_FILE	
+													. $EVE_INFO
+													DECIMATION
+													DATA_ANALYSIS	
+													DECO_DECI
+													DATA_TYPE	
+													continue
+												else
+													continue
+												fi ;;
+
+											*)
+												zenity --error --title="Error Dialog" --text="Something went wrong." --height=100  2> /dev/null && continue ;;
+										esac ;;
+										
+								"Shift a set of mseed sata")
 										TIME_SHIFT
 										continue ;;
 										
-								"Open The Event Info File")								
+								"Merge a set of sac data")
+										MERGE
+										continue ;;
+										
+								"Open event info file")								
 										[ ! -f $EVE_INFO ] && 
 											zenity --error --title="Error Dialog" --text "There is no event info file ..." \
 											--height=100 2> /dev/null && continue || $EDITOR $EVE_INFO & continue ;;
 								
-								"Open The Event Log File")
+								"Open event log file")
 										[ ! -f $LOG_FILE ] &&
 											zenity --error --title="Error Dialog" --text "No log file is available." --width=160 2> /dev/null && continue
 											
@@ -1298,7 +1542,7 @@ while true; do    # Make it possible to return to main menu from submenu
 											zenity --error --title="Error Dialog" --text "Log file is empty." --width=130 2> /dev/null && continue
 										 $EDITOR $LOG_FILE & continue ;;
 										 	
-								"Go to Main Menu")
+								"Go to main menu")
 										 break 1 ;;  
 										 
 								"Exit")
@@ -1314,23 +1558,22 @@ while true; do    # Make it possible to return to main menu from submenu
 					done ;;
 					
 			"Quick Source Study")		
+					[ ! -f $EVE_INFO ] &&
+						zenity --error --title="Error Dialog" --text="No Event info file available." --width=180 2> /dev/null && break 1			
+					AUTO_ANALYSIS
+					continue ;;			
+					
+			"Pyrocko Toolbox")
 					while true; do
 						. $CONF_FILE 
-						SUB2=`zenity --title="Source study (KIWI/Pyrocko)" --text="Please select a task" --height=410 --width=300 \
-						--print-column="2" --column="Num" --column="Task" --list "1" "Automated Source Analysis" "2" "Build Synthetic Data" \
-						"3" "Plot Hudson Diagram" "4" "Plot Piercing Points" "5" "Plot a STA-EVE Map" "6" "Convert S_D_R to MT" \
-						"7" "Convert MT to S_D_R" "8" "Convert Mag to M0" "9" "Azimuthal Gap Info" "10" "Go to Main Menu" "11" "Exit" 2> /dev/null`
+						SUB2=`zenity --title="Pyrocko Toolbox" --text="Please select a task" --height=360 --width=300 \
+						--print-column="2" --column="Num" --column="Task" --list "1" "Build Synthetic Data" "2" "Plot FS Piercing Points" \
+						"3" "Plot Hudson Diagram" "4" "Convert S_D_R to MT" "5" "Convert MT to S_D_R" "6" "Convert Mag to M0" \
+						"7" "Azimuthal Gap Info" "8" "Go to Main Menu" "9" "Exit" 2> /dev/null`
 							
 						A3=$?
 						if [ $A3 -eq 0 ]; then		
 							case $SUB2 in
-								"Automated Source Analysis")	
-									[ ! -f $EVE_INFO ] &&
-										zenity --error --title="Error Dialog" --text="No Event info file available! ..." width=200 2> /dev/null && break 1
-									. $EVE_INFO
-									AUTO_ANALYSIS
-									continue ;;
-									
 								"Build Synthetic Data")
 									SYNTHETIC
 									continue ;;		
@@ -1339,13 +1582,9 @@ while true; do    # Make it possible to return to main menu from submenu
 									HUDSON_DIAG
 									continue ;;	
 									
-								"Plot Piercing Points")
+								"Plot FS Piercing Points")
 									STATION_BEACH_B
-									continue ;;																																	
-									
-								"Plot a STA-EVE Map")
-									MAP
-									continue ;;																
+									continue ;;																																															
 									
 								"Convert S_D_R to MT")
 									SDR_2_MT
@@ -1359,7 +1598,8 @@ while true; do    # Make it possible to return to main menu from submenu
 									MAG_2_MOM
 									continue ;;										
 									
-								"Azimuthal Gap Info")
+								"Azimuthal Gap")
+									. $EVE_INFO
 									GAP
 									continue ;;																	
 																			
