@@ -198,7 +198,7 @@ DATA_ANALYSIS ()
 }
 
 
-ST_SELECTION ()
+ST_SELECTION_LOCAL ()
 {
 	for ST in `cat .stations`; do
 		AZI=`saclst AZ f *$ST* | awk '{print $2}' | head -1`
@@ -243,11 +243,73 @@ ST_SELECTION ()
 	done
 	fi
 }		
+
+
+ST_SELECTION_ONLINE ()
+{
+	[ ! -d  $KIWI_DATA_DIR/$NM ] && mkdir $KIWI_DATA_DIR/$NM || rm -r -f $KIWI_DATA_DIR/$NM/* 2> /dev/null
+	cp $DATA_QUERY/data/$NM/prepared/* $KIWI_DATA_DIR/$NM
+	cd $KIWI_DATA_DIR/$NM
+	
+	EVLA=`grep "latitude" event.txt | awk '{print $3}'` 
+	EVLO=`grep "longitude" event.txt | awk '{print $3}'` 
+	sed -i "/e =/c\e = model.Event(lat=$EVLA, lon=$EVLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+
+	grep -v "^  " stations.txt | awk '{print $1}' > .stations
+	
+	for ST in `cat .stations`; do
+		STLA=`grep "$ST" stations.txt | awk '{print $2}'`
+		STLO=`grep "$ST" stations.txt | awk '{print $3}'`
+		sed -i "/s =/c\s = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+		INFO=`python $PYROCKO/dist_azi_bazi.py`
+		DIST=`echo $INFO | awk '{print $1}'`
+		AZIM=`echo $INFO | awk '{print substr($2,2,6)}'`
+		echo "$ST   $DIST   $AZIM"	
+	done > .azi_dis
+
+	num_st=`cat .azi_dis | wc -l`
+
+	if [ $num_st -gt 5 ]; then
+		cat .azi_dis | sort -n -k 3 > .azim_dist
+	for ((i=2; i <= $((num_st-1)); i+=1)); do
+		j=$((i-1))
+		k=$((i+1))
+		read -a ST1 <<< `cat .azim_dist | awk -vi=$i 'NR==i {print $0}'`
+		NM1=`echo ${ST1[@]} | cut -f 1 -d " "`
+		DI1=`echo ${ST1[@]} | cut -f 2 -d " "`
+		AZ1=`echo ${ST1[@]} | cut -f 3 -d " "`	
+		read -a ST2 <<< `cat .azim_dist | awk -vj=$j 'NR==j {print $0}'`
+		NM2=`echo ${ST2[@]} | cut -f 1 -d " "`
+		DI2=`echo ${ST2[@]} | cut -f 2 -d " "`
+		AZ2=`echo ${ST2[@]} | cut -f 3 -d " "`	
+		read -a ST3 <<< `cat .azim_dist | awk -vk=$k 'NR==k {print $0}'`
+		NM3=`echo ${ST3[@]} | cut -f 1 -d " "`
+		DI3=`echo ${ST3[@]} | cut -f 2 -d " "`
+		AZ3=`echo ${ST3[@]} | cut -f 3 -d " "`	
+	
+		DIij=`echo "scale=1; (($DI1 - $DI2) * ($DI1 - $DI2)) + (($AZ1 - $AZ2) * ($AZ1 - $AZ2))" | bc -l`
+		DIij=`bc -l <<< "sqrt($DIij)"`
+		DIik=`echo "scale=1; (($DI1 - $DI3) * ($DI1 - $DI3)) + (($AZ1 - $AZ3) * ($AZ1 - $AZ3))" | bc -l`
+		DIik=`bc -l <<< "sqrt($DIik)"`		
+		MDi=`echo "scale=1; ($DIij + $DIik) / 2" | bc -l`
+		echo "$NM1 $MDi"
+	done > .Dist
+
+	cat .Dist | sort -n -k 2 > .Distances
+	mkdir $KIWI_DATA_DIR/extra_$NM 2> /dev/null
+	
+	N=$((num_st / 5))
+	for ((i=1; i <= $N; i+=1)); do
+		ST=`cat .Distances | awk -vi=$i 'NR==i {print $1}'`
+		mv *$ST* $KIWI_DATA_DIR/extra_$NM/
+	done
+	fi
+}
 	
 	
 DECO_DECI ()
 {	
-	[ "$SMOOTH_COVERAGE" = "yes" ] && ST_SELECTION
+	[ "$SMOOTH_COVERAGE" = "yes" ] && ST_SELECTION_LOCAL
 	
 	cd ./PROCESS
 	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
