@@ -54,6 +54,7 @@ CONF_FILE ()
 	export KEEP_PRE_KIWI_DATA=no
 	export KEEP_PRE_BUP_DATA=no
 	export SMOOTH_COVERAGE=no
+	export STA_LIM=10
 	
 	#------- SAC Configs -------# 
 	export SAC=SAC
@@ -251,58 +252,104 @@ ST_SELECTION_ONLINE ()
 	cp $DATA_QUERY/data/$NM/prepared/* $KIWI_DATA_DIR/$NM
 	cd $KIWI_DATA_DIR/$NM
 	
-	EVLA=`grep "latitude" event.txt | awk '{print $3}'` 
-	EVLO=`grep "longitude" event.txt | awk '{print $3}'` 
-	sed -i "/e =/c\e = model.Event(lat=$EVLA, lon=$EVLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+	sed -i "/e =/c\e = model.Event(lat=$LAT, lon=$LON)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
 
 	grep -v "^  " stations.txt | awk '{print $1}' > .stations
 	
-	for ST in `cat .stations`; do
-		STLA=`grep "$ST" stations.txt | awk '{print $2}'`
-		STLO=`grep "$ST" stations.txt | awk '{print $3}'`
-		sed -i "/s =/c\s = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
-		INFO=`python $PYROCKO/dist_azi_bazi.py`
-		DIST=`echo $INFO | awk '{print $1}'`
-		AZIM=`echo $INFO | awk '{print substr($2,2,6)}'`
-		echo "$ST   $DIST   $AZIM"	
-	done > .azi_dis
-
-	num_st=`cat .azi_dis | wc -l`
-
-	if [ $num_st -gt 5 ]; then
-		cat .azi_dis | sort -n -k 3 > .azim_dist
-	for ((i=2; i <= $((num_st-1)); i+=1)); do
-		j=$((i-1))
-		k=$((i+1))
-		read -a ST1 <<< `cat .azim_dist | awk -vi=$i 'NR==i {print $0}'`
-		NM1=`echo ${ST1[@]} | cut -f 1 -d " "`
-		DI1=`echo ${ST1[@]} | cut -f 2 -d " "`
-		AZ1=`echo ${ST1[@]} | cut -f 3 -d " "`	
-		read -a ST2 <<< `cat .azim_dist | awk -vj=$j 'NR==j {print $0}'`
-		NM2=`echo ${ST2[@]} | cut -f 1 -d " "`
-		DI2=`echo ${ST2[@]} | cut -f 2 -d " "`
-		AZ2=`echo ${ST2[@]} | cut -f 3 -d " "`	
-		read -a ST3 <<< `cat .azim_dist | awk -vk=$k 'NR==k {print $0}'`
-		NM3=`echo ${ST3[@]} | cut -f 1 -d " "`
-		DI3=`echo ${ST3[@]} | cut -f 2 -d " "`
-		AZ3=`echo ${ST3[@]} | cut -f 3 -d " "`	
+	num_st=`cat .stations | wc -l`
 	
-		DIij=`echo "scale=1; (($DI1 - $DI2) * ($DI1 - $DI2)) + (($AZ1 - $AZ2) * ($AZ1 - $AZ2))" | bc -l`
-		DIij=`bc -l <<< "sqrt($DIij)"`
-		DIik=`echo "scale=1; (($DI1 - $DI3) * ($DI1 - $DI3)) + (($AZ1 - $AZ3) * ($AZ1 - $AZ3))" | bc -l`
-		DIik=`bc -l <<< "sqrt($DIik)"`		
-		MDi=`echo "scale=1; ($DIij + $DIik) / 2" | bc -l`
-		echo "$NM1 $MDi"
-	done > .Dist
-
-	cat .Dist | sort -n -k 2 > .Distances
-	mkdir $KIWI_DATA_DIR/extra_$NM 2> /dev/null
+	if [ $num_st -gt $STA_LIM ]; then
+	mkdir ../extra_$EVENT 2> /dev/null
 	
-	N=$((num_st / 5))
-	for ((i=1; i <= $N; i+=1)); do
-		ST=`cat .Distances | awk -vi=$i 'NR==i {print $1}'`
-		mv *$ST* $KIWI_DATA_DIR/extra_$NM/
-	done
+		for ST in `cat .stations`; do
+	
+			STLA=`grep "$ST" stations.txt | awk '{print $2}'`
+			STLO=`grep "$ST" stations.txt | awk '{print $3}'`
+			sed -i "/s =/c\s = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+			INFO=`python $PYROCKO/dist_azi_bazi.py`
+			DIST=`echo $INFO | awk '{print $1}'`
+			AZIM=`echo $INFO | awk '{print substr($2,2,6)}'`
+			(( `echo "$AZIM < 0" | bc -l` )) && AZIM=`echo "scale=2; 360 + $AZIM" | bc -l`
+			echo "$ST $DIST $AZIM"
+		
+		done > .eve_st_azi_dis
+
+		for ST in `cat .stations`; do
+			STNM=`echo $ST`
+			STLA=`grep "$STNM" stations.txt | awk '{print $2}'`
+			STLO=`grep "$STNM" stations.txt | awk '{print $3}'`
+			sed -i "/e =/c\e = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+			for st in `cat .stations`; do	
+				[ "$st" = "$STNM" ] && continue
+				stla=`grep "$st" stations.txt | awk '{print $2}'`
+				stlo=`grep "$st" stations.txt | awk '{print $3}'`
+				sed -i "/s =/c\s = model.Event(lat=$stla, lon=$stlo)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+				INFO=`python $PYROCKO/dist_azi_bazi.py`
+				dist=`echo $INFO | awk '{print $1}'`	
+				if (( `echo "$dist == 0.0" | bc -l` )); then
+					[ ! `grep "$st" .no_move 2> /dev/null | head -n 1` ] && mv ./*$st* ../extra_$EVENT && echo -e "$st\n$STNM" >> .no_move && sed -i "/$st/d" .stations
+					continue
+				fi
+				echo "$STNM $st $dist" >> .st_st_dist	
+			done 
+		done	
+	
+		for ST1 in `cat .stations`; do
+			DI1=`grep -w "$ST1" .eve_st_azi_dis | cut -f 2 -d " "`
+			AZ1=`grep -w "$ST1" .eve_st_azi_dis | cut -f 3 -d " "`
+			
+			read -a STATIONS <<< `grep "^$ST1" .st_st_dist | sort -n -k 3 | head -n 3`	
+			ST2=`echo ${STATIONS[@]} | cut -f 2 -d " "`
+			ST3=`echo ${STATIONS[@]} | cut -f 5 -d " "`
+			ST4=`echo ${STATIONS[@]} | cut -f 8 -d " "`
+			
+			DI2=`grep -w "$ST2" .eve_st_azi_dis | cut -f 2 -d " "`
+			AZ2=`grep -w "$ST2" .eve_st_azi_dis | cut -f 3 -d " "`
+			
+			DI3=`grep -w "$ST3" .eve_st_azi_dis | cut -f 2 -d " "`
+			AZ3=`grep -w "$ST3" .eve_st_azi_dis | cut -f 3 -d " "`				
+				
+			DI4=`grep -w "$ST4" .eve_st_azi_dis | cut -f 2 -d " "`
+			AZ4=`grep -w "$ST4" .eve_st_azi_dis | cut -f 3 -d " "`				
+			
+			DI12=`echo "scale=1; (($DI1 - $DI2) * ($DI1 - $DI2)) + (($AZ1 - $AZ2) * ($AZ1 - $AZ2))" | bc -l`
+			DI12=`bc -l <<< "sqrt($DI12)"`
+			
+			DI13=`echo "scale=1; (($DI1 - $DI3) * ($DI1 - $DI3)) + (($AZ1 - $AZ3) * ($AZ1 - $AZ3))" | bc -l`
+			DI13=`bc -l <<< "sqrt($DI13)"`	
+				
+			DI14=`echo "scale=1; (($DI1 - $DI4) * ($DI1 - $DI4)) + (($AZ1 - $AZ4) * ($AZ1 - $AZ4))" | bc -l`
+			DI14=`bc -l <<< "sqrt($DI14)"`
+			
+			MDI=`echo "scale=1; ($DI12 + $DI13 + $DI14) / 3" | bc -l`
+			echo "$ST1 $MDI"
+			
+		done >> .MDI
+		
+		num_st=`cat .stations | wc -l`
+		N=`echo "$num_st / 4" | bc -l` && N=`round $N 0`
+		
+		cat .MDI | sort -n -k 2 | head -n $N > .rm_select
+		
+		cat .rm_select | while read line; do
+			MDI=`echo $line | cut -f 2 -d " "`
+			STNM=`echo $line | cut -f 1 -d " "`
+			DIS_LIM=`echo "$MDI * 3" | bc -l`
+			
+			i=0
+			for st in `cat .stations`; do	
+				[ "$st" = "$STNM" ] && continue
+				dist=`grep "$st $STNM" .st_st_dist | cut -f 3 -d " "`
+				if (( `echo "$dist < $DIS_LIM" | bc -l` )) && [ `grep "$st" .final_del 2> /dev/null` ]; then
+					i=$((i+1))
+				fi
+			done
+			[ "$i" -eq "0" ] && echo "$STNM" >> .final_del	
+		done	
+
+			for station in `cat .final_del 2> /dev/null`; do
+				mv *$station* ../extra_$EVENT 2> /dev/null
+			done	
 	fi
 }
 	
