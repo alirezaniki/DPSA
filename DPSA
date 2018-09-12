@@ -254,47 +254,49 @@ ST_SELECTION_ONLINE ()
 	
 	sed -i "/e =/c\e = model.Event(lat=$LAT, lon=$LON)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
 
-	grep -v "^  " stations.txt | awk '{print $1}' > .stations
+	grep -v "^  " stations.txt > stations.dat
 	
-	num_st=`cat .stations | wc -l`
+	num_st=`cat stations.dat | wc -l`
 	
 	if [ $num_st -gt $STA_LIM ]; then
 	mkdir ../extra_$EVENT 2> /dev/null
 	
-		for ST in `cat .stations`; do
-	
-			STLA=`grep "$ST" stations.txt | awk '{print $2}'`
-			STLO=`grep "$ST" stations.txt | awk '{print $3}'`
+		cat stations.dat | while read line; do
+			STNM=`echo $line | awk '{print $1}'`
+			STLA=`echo $line | awk '{print $2}'`
+			STLO=`echo $line | awk '{print $3}'`
 			sed -i "/s =/c\s = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
 			INFO=`python $PYROCKO/dist_azi_bazi.py`
 			DIST=`echo $INFO | awk '{print $1}'`
 			AZIM=`echo $INFO | awk '{print substr($2,2,6)}'`
 			(( `echo "$AZIM < 0" | bc -l` )) && AZIM=`echo "scale=2; 360 + $AZIM" | bc -l`
-			echo "$ST $DIST $AZIM"
+			echo "$STNM $DIST $AZIM"
 		
-		done > .eve_st_azi_dis
+	done > .eve_st_azi_dis
 
-		for ST in `cat .stations`; do
-			STNM=`echo $ST`
-			STLA=`grep "$STNM" stations.txt | awk '{print $2}'`
-			STLO=`grep "$STNM" stations.txt | awk '{print $3}'`
+		cat stations.dat | while read line; do
+			STNM=`echo $line | awk '{print $1}'`
+			STLA=`echo $line | awk '{print $2}'`
+			STLO=`echo $line | awk '{print $3}'`
 			sed -i "/e =/c\e = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
-			for st in `cat .stations`; do	
+			cat stations.dat | while read line; do
+				st=`echo $line | awk '{print $1}'`
 				[ "$st" = "$STNM" ] && continue
-				stla=`grep "$st" stations.txt | awk '{print $2}'`
-				stlo=`grep "$st" stations.txt | awk '{print $3}'`
+				stla=`grep "$st" stations.dat | awk '{print $2}'`
+				stlo=`grep "$st" stations.dat | awk '{print $3}'`
 				sed -i "/s =/c\s = model.Event(lat=$stla, lon=$stlo)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
 				INFO=`python $PYROCKO/dist_azi_bazi.py`
 				dist=`echo $INFO | awk '{print $1}'`	
 				if (( `echo "$dist == 0.0" | bc -l` )); then
-					[ ! `grep "$st" .no_move 2> /dev/null | head -n 1` ] && mv ./*$st* ../extra_$EVENT && echo -e "$st\n$STNM" >> .no_move && sed -i "/$st/d" .stations
+					[ ! `grep "$st" .no_move 2> /dev/null | head -n 1` ] && mv ./*$st* ../extra_$EVENT && echo -e "$st\n$STNM" >> .no_move && sed -i "/$st/d" stations.dat
 					continue
 				fi
 				echo "$STNM $st $dist" >> .st_st_dist	
 			done 
 		done	
 	
-		for ST1 in `cat .stations`; do
+		cat stations.dat | while read line; do
+			ST1=`echo $line | awk '{print $1}'`
 			DI1=`grep -w "$ST1" .eve_st_azi_dis | cut -f 2 -d " "`
 			AZ1=`grep -w "$ST1" .eve_st_azi_dis | cut -f 3 -d " "`
 			
@@ -326,14 +328,14 @@ ST_SELECTION_ONLINE ()
 			
 		done >> .MDI
 		
-		num_st=`cat .stations | wc -l`
+		num_st=`cat stations.dat | wc -l`
 		N=`echo "$num_st / 4" | bc -l` && N=`round $N 0`
 		
 		cat .MDI | sort -n -k 2 | head -n $N > .rm_select
 		
 		cat .rm_select | while read line; do
+			STNM=`echo $line | cut -f 1 -d " "`		
 			MDI=`echo $line | cut -f 2 -d " "`
-			STNM=`echo $line | cut -f 1 -d " "`
 			DIS_LIM=`echo "$MDI * 3" | bc -l`
 			
 			i=0
@@ -349,9 +351,11 @@ ST_SELECTION_ONLINE ()
 
 			for station in `cat .final_del 2> /dev/null`; do
 				mv *$station* ../extra_$EVENT 2> /dev/null
+				sed -i "/$station/d" stations.dat
 			done	
 	fi
-}
+}	
+
 	
 	
 DECO_DECI ()
