@@ -252,7 +252,9 @@ ST_SELECTION_ONLINE ()
 	cp $DATA_QUERY/data/$NM/prepared/* $KIWI_DATA_DIR/$NM
 	cd $KIWI_DATA_DIR/$NM
 	
-	sed -i "/e =/c\e = model.Event(lat=$LAT, lon=$LON)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+	EVLA=`grep "latitude" event.txt | awk '{print $3}'` 
+	EVLO=`grep "longitude" event.txt | awk '{print $3}'` 
+	sed -i "/e =/c\e = model.Event(lat=$EVLA, lon=$EVLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
 
 	grep -v "^  " stations.txt > stations.dat
 	
