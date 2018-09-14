@@ -1725,6 +1725,8 @@ while true; do    # Make it possible to return to the main menu from submenu
 			"Quick Source Study")		
 					[ ! -f $EVE_INFO ] &&
 						zenity --error --title="Error Dialog" --text="No Event info file available." --width=180 2> /dev/null && break 1			
+					. $CONF_FILE  
+					. $EVE_INFO	
 					AUTO_ANALYSIS
 					continue ;;			
 					
