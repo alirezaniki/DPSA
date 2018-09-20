@@ -202,16 +202,16 @@ DATA_ANALYSIS ()
 
 ST_SELECTION_LOCAL ()
 {
-	[ ! -d ./extra_$NAME ] && mkdir ./extra_$NAME
-	rm .azi_dis .st_coor
-	for ST in `cat .stations`; do
+	rm .azi_dis .st_coor 2> /dev/null
+	saclst KSTNM f ./*$SAC | awk '{print $2}' | sort | uniq > ./.stations	
+	for ST in `cat ./.stations`; do
 		AZI=`saclst AZ f *$ST* | awk '{print $2}' | head -1`
 		DIS=`saclst DIST f *$ST* | awk '{print $2}' | head -1`
 		LAT=`grep $ST $DPSA_HOME/.stations.dat | awk '{print $3}'`
 		LON=`grep $ST $DPSA_HOME/.stations.dat | awk '{print $4}'`
-		echo "$ST   $DIS   $AZI" >> .eve_st_azi_dis
+		echo "$ST $DIS $AZI" >> .eve_st_azi_dis
 		[ \( -z $LAT \) -o \( -z $LON \) ] && continue	
-		echo "$ST   $LAT   $LON" >> .st_coor
+		echo "$ST $LAT $LON" >> .st_coor
 	done 
 	
 	num_st=`cat .st_coor | wc -l`
@@ -230,7 +230,7 @@ ST_SELECTION_LOCAL ()
 			INFO=`python $PYROCKO/dist_azi_bazi.py`
 			dist=`echo $INFO | awk '{print $1}'`	
 			if (( `echo "$dist == 0.0" | bc -l` )); then
-				[ ! `grep "$st" .no_move 2> /dev/null | head -n 1` ] && mv ./*$st* ./extra_$NAME && echo -e "$st\n$STNM" >> .no_move && sed -i "/$st/d" .st_coor
+				[ ! `grep "$st" .no_move 2> /dev/null | head -n 1` ] && mv ./*$st* ./TRASH && echo -e "$st\n$STNM" >> .no_move && sed -i "/$st/d" .st_coor
 				continue
 			fi
 				echo "$STNM $st $dist" >> .st_st_dist	
@@ -292,12 +292,10 @@ ST_SELECTION_LOCAL ()
 	done	
 
 		for station in `cat .final_del 2> /dev/null`; do
-			mv *$station* ./extra_$NAME 2> /dev/null
+			mv *$station* ./TRASH 2> /dev/null
 			sed -i "/$station/d" .st_coor
 		done	
-	fi	
-}		
-
+}
 
 
 ST_SELECTION_ONLINE ()
