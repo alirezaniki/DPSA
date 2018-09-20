@@ -169,7 +169,7 @@ DATA_ANALYSIS ()
 		else
 			read -a DATA_KZTIME <<< `saclst kztime f *$st* | awk '{print $2}' | sort -n | uniq`
 			[ "${#DATA_KZTIME[@]}" -ne "1" ] && 
-				zenity --error --title="Data Error" --text="Some data with different KZTIME detected." --width=280 2> /dev/null && continue	
+				zenity --error --title="Data Error" --text="Some data with different KZTIME detected." --width=280 2> /dev/null && break 2	
 				
 			DATA_H="${DATA_KZTIME%%:*}" 
 			DATA_S="${DATA_KZTIME##*:}" 
@@ -624,7 +624,7 @@ MERGE ()
 	
 	read -a delta <<< `saclst DELTA f ./*$SAC | awk '{print $2}'| sort -n | uniq`
 	[ "${#delta[@]}" -ne "1" ] && 
-		zenity --error --title="Header Error" --text="Some different Sampling rates detected." --height=100 2> /dev/null && continue
+		zenity --error --title="Header Error" --text="Some data with different Sampling rates detected." --height=100 2> /dev/null && break 2
 	
 	Name=`zenity --forms --title="Merge Question" --text="Please enter a name to save merged data" --add-entry="Enter Name" 2> /dev/null`	
 	
