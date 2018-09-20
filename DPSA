@@ -1344,8 +1344,9 @@ HUDSON_DIAG ()
 Yfile2SAC ()
 {
 	cd $INPUT
-	[ -n `ls $SEISAN_HOME/WAV/* 2> /dev/null` ] && rm -rf $SEISAN_HOME/WAV/*
-	mv Y* $SEISAN_HOME/WAV && cd $SEISAN_HOME/WAV
+	[[ `ls $SEISAN_HOME/WAV/* 2> /dev/null` ]] && rm -rf $SEISAN_HOME/WAV/*
+	mv Y* $SEISAN_HOME/WAV
+	cd $SEISAN_HOME/WAV
 	dirf Y*
 	nansei <<< filenr.lis
 	dirf "$YEAR"*
