@@ -281,7 +281,7 @@ ST_SELECTION_LOCAL ()
 		DIS_LIM=`echo "$MDI * 3" | bc -l`
 			
 		i=0
-		for st in `cat .st_coor`; do	
+		for st in `cat .stations`; do	
 			[ "$st" = "$STNM" ] && continue
 			dist=`grep "$st $STNM" .st_st_dist | cut -f 3 -d " "`
 			if (( `echo "$dist < $DIS_LIM" | bc -l` )) && [ `grep "$st" .final_del 2> /dev/null` ]; then
