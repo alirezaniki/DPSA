@@ -19,7 +19,7 @@ KIWI_WORK_DIR="/home/alireza/Kiwi/WORK"
 KIWI_RESULTS_DIR="/home/alireza/Kiwi/RESULTS"
 KIWI_DATA_DIR="/home/alireza/Kiwi/DATA"
 KIWI_GFDB_DIR="/home/alireza/Kiwi/GFDB"
-SEISAN_HOME=`"/home/alireza/Programs/Seismo"`
+SEISAN_HOME="/home/alireza/Programs/Seismo"
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~ DO NOT CHANGE ANYTHING BELOW ~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
