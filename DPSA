@@ -133,13 +133,13 @@ DECIMATION ()
 DATA_ANALYSIS ()
 {
 	cd $INPUT
-	[ -z "$( ls ./*$SAC 2> /dev/null )" ] && 
+	[[ ! `ls ./*$SAC 2> /dev/null` ]] && 
 		zenity --error --title="Input Error" --text="No input data available." --width=160 2> /dev/null && continue	
 		
-	[ -z "$( ls -A $RESP 2> /dev/null )" ] && 
+	[[ ! `ls -A $RESP 2> /dev/null` ]] && 
 		zenity --error --title="Metadata Error" --text="No metadata data available." --width=180 2> /dev/null && continue	
 		
-	[ -z "$( ls $DPSA_HOME/.stations.dat 2> /dev/null )" ] && 
+	[ ! -f "$DPSA_HOME/.stations.dat" ] && 
 		zenity --error --title="Info Error" --text="DPSA_HOME/.stations.dat file is missing." --width=270 2> /dev/null && continue		
 	
 	# Backup process
@@ -158,7 +158,7 @@ DATA_ANALYSIS ()
 	fi
 
 	saclst KSTNM f ./*$SAC | awk '{print $2}' | sort | uniq > ./.stations	
-	for st in `cat ./.stations`; do
+	cat ./.stations | while read st; do
 		STLA=(`grep "$st" ../.stations.dat 2> /dev/null | awk '{print $3}'`)
 		STLO=(`grep "$st" ../.stations.dat 2> /dev/null | awk '{print $4}'`)
 		STEL=(`grep "$st" ../.stations.dat 2> /dev/null | awk '{print $5}'`)
@@ -204,7 +204,7 @@ ST_SELECTION_LOCAL ()
 {
 	rm .azi_dis .st_coor 2> /dev/null
 	saclst KSTNM f ./*$SAC | awk '{print $2}' | sort | uniq > ./.stations	
-	for ST in `cat ./.stations`; do
+	cat ./.stations | while read ST; do
 		AZI=`saclst AZ f *$ST* | awk '{print $2}' | head -1`
 		DIS=`saclst DIST f *$ST* | awk '{print $2}' | head -1`
 		LAT=`grep $ST $DPSA_HOME/.stations.dat | awk '{print $3}'`
@@ -291,7 +291,7 @@ ST_SELECTION_LOCAL ()
 			[ "$i" -eq "0" ] && echo "$STNM" >> .final_del	
 	done	
 
-		for station in `cat .final_del 2> /dev/null`; do
+		cat .final_del 2> /dev/null | while read station; do
 			mv *$station* ./TRASH 2> /dev/null
 			sed -i "/$station/d" .st_coor
 		done	
@@ -312,7 +312,7 @@ ST_SELECTION_ONLINE ()
 	
 	num_st=`cat stations.dat | wc -l`
 	
-	if [ $num_st -gt $STA_LIM ]; then
+	if [ "$num_st" -gt "$STA_LIM" ]; then
 	mkdir ../extra_$EVENT 2> /dev/null
 	
 		cat stations.dat | while read line; do
@@ -393,7 +393,7 @@ ST_SELECTION_ONLINE ()
 			DIS_LIM=`echo "$MDI * 3" | bc -l`
 			
 			i=0
-			for st in `cat .stations`; do	
+			cat .stations | while read st; do	
 				[ "$st" = "$STNM" ] && continue
 				dist=`grep "$st $STNM" .st_st_dist | cut -f 3 -d " "`
 				if (( `echo "$dist < $DIS_LIM" | bc -l` )) && [ `grep "$st" .final_del 2> /dev/null` ]; then
@@ -403,7 +403,7 @@ ST_SELECTION_ONLINE ()
 			[ "$i" -eq "0" ] && echo "$STNM" >> .final_del	
 		done	
 
-			for station in `cat .final_del 2> /dev/null`; do
+			cat .final_del 2> /dev/null | while read station; do
 				mv *$station* ../extra_$EVENT 2> /dev/null
 				sed -i "/$station/d" stations.dat
 			done	
@@ -417,8 +417,8 @@ DECO_DECI ()
 	[ "$SMOOTH_COVERAGE" = "yes" ] && ST_SELECTION_LOCAL
 	
 	cd ./PROCESS
-	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
-		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
+	[[ ! `ls ./*$SAC 2> /dev/null` ]] && 
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the log file." --width=220 2> /dev/null && continue
 	
 	META_TYPE=`echo $META_TYPE | tr '[:upper:]' '[:lower:]'`
 	if [ "$META_TYPE" = "pz" ]; then
@@ -510,7 +510,7 @@ ROTATE ()
 {
 	saclst KSTNM f ./*$SAC | awk '{print $2}'| sort | uniq > ./.st.txt
 	
-	for ST in `cat ./.st.txt`; do
+	cat ./.st.txt | while read ST; do
 		if [ \( -z ./*$ST*$XXE* \) -o \( ! -f ./*$ST*$XXN* \) ]; then
 			echo -e "$ST station Moved to TRASH, $XXN or $XXE component is missing." >> $LOG_FILE
 			mv *$ST* ./TRASH 
@@ -549,8 +549,8 @@ ROTATE ()
 		fi	
 	done
 	
-	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
-		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
+	[[ ! `ls ./*$SAC 2> /dev/null` ]] && 
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the log file." --width=220 2> /dev/null && continue
 	
 	sac <<- END
 	r ./*$XXR*
@@ -566,22 +566,14 @@ ROTATE ()
 
 SAC2MSEED ()
 {
-	[ ! -f $PYROCKO/sac_2_mseed.py ] &&
-		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && break 1	
-	for data in `ls ./*$SAC`; do
-		STA=`saclst KSTNM f $data   | awk '{print $2}'`
-		CMP=`saclst KCMPNM f $data  | awk '{print $2}'`
-		out_data="DISPL.$STA.$CMP"
-		sed -i "/out_filename =/c\		out_filename = '$out_data'" $PYROCKO/sac_2_mseed.py 2> /dev/null
-		python $PYROCKO/sac_2_mseed.py $data 
-	done 
+	jackseis ./*$SAC --output-dir=./ --output-format="mseed" --output="DISPL.%s.%c"	
 }
 
 
 DATA_TYPE ()
 {
-	[ -z "$(ls ./*$SAC 2> /dev/null)" ] && 
-		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
+	[[ ! `ls ./*$SAC 2> /dev/null` ]] &&
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the log file." --width=220 2> /dev/null && continue
 	
 	[ ! -d  $KIWI_DATA_DIR/$NAME ] && mkdir $KIWI_DATA_DIR/$NAME
 	[ "$KEEP_PRE_KIWI_DATA" = "no" ] && rm -f $KIWI_DATA_DIR/$NAME/* 2> /dev/null
@@ -617,7 +609,7 @@ DATA_TYPE ()
 MERGE ()
 {
 	cd $INPUT
-	[ -z "$(ls ./*$SAC)" ] && 
+	[[ ! `ls ./*$SAC 2> /dev/null` ]] && 
 		zenity --error --title="Data Error" --text="There is no input data to merge." --width=210 2> /dev/null && continue
 	
 	read -a delta <<< `saclst DELTA f ./*$SAC | awk '{print $2}'| sort -n | uniq`
