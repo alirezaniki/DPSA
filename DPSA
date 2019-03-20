@@ -448,7 +448,7 @@ ROTATE ()
 	
 	cat ./.st.txt | while read ST; do
 		if [ \( -z ./*$ST*$XXE* \) -o \( ! -f ./*$ST*$XXN* \) ]; then
-			echo -e "$ST station Moved to TRASH, $XXN or $XXE component is missing." >> $LOG_FILE
+			echo -e "$XXN or $XXE component is missing... $ST station Moved to TRASH." >> $LOG_FILE
 			mv *$ST* ./TRASH 
 		else	
 			sac <<- END
