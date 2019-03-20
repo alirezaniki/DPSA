@@ -110,26 +110,6 @@ echo $(printf %.$2f $(echo "scale=$2;(((10^$2)*$1)+0.5)/(10^$2)" | bc))
 }
 
 
-DECIMATION ()
-{
-	NUM=`echo "scale=2; $RAW_SR / $DSP_SR" | bc -l`
-	NUM_INT=${NUM%.*}
-	NUM_DEC=${NUM#*.}
-	
-	(( `echo "$NUM_DEC" != "00"` )) && 
-		zenity --error --title="SR Error" --width=320 --text="Bad value of initial/target sampling rate detected." 2> /dev/null && continue	
-	
-	if [ "$NUM_INT" -lt "08" ]; then
-		DECIMATE="${NUM_INT}" 
-	else	
-		DEC=`factor $NUM_INT | cut -f 2 -d :`
-		read -r -a DECIMATE <<< $DEC
-		DECICOUNT=${#DECIMATE[@]}
-	fi	
-	echo "DECIMATES are ${DECIMATE[@]}" >> $LOG_FILE
-}	
-
-
 DATA_ANALYSIS ()
 {
 	cd $INPUT
@@ -415,10 +395,10 @@ ST_SELECTION_ONLINE ()
 DECO_DECI ()
 {	
 	[ "$SMOOTH_COVERAGE" = "yes" ] && ST_SELECTION_LOCAL
-	
+
 	cd ./PROCESS
 	[[ ! `ls ./*$SAC 2> /dev/null` ]] && 
-		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the log file." --width=220 2> /dev/null && continue
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
 	
 	META_TYPE=`echo $META_TYPE | tr '[:upper:]' '[:lower:]'`
 	if [ "$META_TYPE" = "pz" ]; then
@@ -429,35 +409,14 @@ DECO_DECI ()
 			if [ ! -f $RESP/$META_SHAPE_PZ ]; then
 				echo "No metadata available for $data. Moved to TRASH ..." >> $LOG_FILE 
 				mv $data ./TRASH
-			else		
-				if [ "$DECICOUNT" -eq "1" ]; then
-					sac <<- EOF
-					r $data
-					decimate ${DECIMATE[0]}
-					transfer from polezero subtype $RESP/$META_SHAPE_PZ to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
-					wh; w over
-					q		
-					EOF
-				elif [ "$DECICOUNT" -eq "2" ]; then	
-					sac <<- EOF
-					r $data
-					decimate ${DECIMATE[0]}
-					decimate ${DECIMATE[1]}
-					transfer from polezero subtype $RESP/$META_SHAPE_PZ to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
-					wh; w over
-					q		
-					EOF
-				else
-					sac <<- EOF
-					r $data
-					decimate ${DECIMATE[0]}
-					decimate ${DECIMATE[1]}
-					decimate ${DECIMATE[2]}
-					transfer from polezero subtype $RESP/$META_SHAPE_PZ to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
-					wh; w over
-					q
-					EOF
-				fi
+			else	
+			jackseis ./$data --output-dir=./ --output-format="sac" --output="$data" --force --downsample="$DSP_SR"
+				sac <<- EOF
+				r $data
+				transfer from polezero subtype $RESP/$META_SHAPE_PZ to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
+				wh; w over
+				q		
+				EOF
 			fi
 		done	
 	else
@@ -469,37 +428,14 @@ DECO_DECI ()
 				echo "There is no metadata for $data. Moved to TRASH ..." >> $LOG_FILE
 				mv $data ./TRASH
 			else	
-				if [ "$DECICOUNT" -eq "1" ]; then				
-					sac <<- EOF
-					r $data
-					decimate ${DECIMATE[0]}
-					div 1e9
-					transfer from evalresp fname $RESP/$META_SHAPE_RESP to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
-					wh; w over
-					q		
-					EOF
-				elif [ "$DECICOUNT" -eq "2" ]; then	
-					sac <<- EOF
-					r $data
-					decimate ${DECIMATE[0]}
-					decimate ${DECIMATE[1]}
-					div 1e9
-					transfer from evalresp fname $RESP/$META_SHAPE_RESP to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
-					wh; w over
-					q		
-					EOF
-				else
-					sac <<- EOF
-					r $data
-					decimate ${DECIMATE[0]}
-					decimate ${DECIMATE[1]}
-					decimate ${DECIMATE[2]}
-					div 1e9
-					transfer from evalresp fname $RESP/$META_SHAPE_RESP to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
-					wh; w over
-					q
-					EOF
-				fi
+				jackseis ./$data --output-dir=./ --output-format="sac" --output="$data" --force --downsample="$DSP_SR"				
+				sac <<- EOF
+				r $data
+				div 1e9
+				transfer from evalresp fname $RESP/$META_SHAPE_RESP to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
+				wh; w over
+				q		
+				EOF
 			fi	
 		done
 	fi
@@ -1667,8 +1603,7 @@ while getopts "a" options; do
 		
 			> $LOG_FILE
 			. $EVE_INFO
-			DECIMATION
-		    DATA_ANALYSIS
+		        DATA_ANALYSIS
 			DECO_DECI	
 			DATA_TYPE	
 			AUTO_ANALYSIS
@@ -1742,7 +1677,6 @@ while true; do    # Make it possible to return to the main menu from submenu
 											0) 
 												> $LOG_FILE
 												. $EVE_INFO
-												DECIMATION
 												DATA_ANALYSIS
 												DECO_DECI	
 												DATA_TYPE	
@@ -1780,7 +1714,6 @@ while true; do    # Make it possible to return to the main menu from submenu
 														
 													> $LOG_FILE	
 													. $EVE_INFO
-													DECIMATION
 													DATA_ANALYSIS	
 													DECO_DECI
 													DATA_TYPE	
