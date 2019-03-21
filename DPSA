@@ -126,7 +126,7 @@ DATA_ANALYSIS ()
 	[ "$KEEP_PRE_BUP_DATA" = "no" ] && rm -f $BACKUP/$NAME/* 2> /dev/null
 	if [ "$DATA_BUP" = "yes" ]; then
 		[ ! -d $BACKUP/$NAME ] && mkdir $BACKUP/$NAME 
-		cp ./*$SAC $BACKUP/$NAME 
+		cp ./*$SAC $BACKUP/$NAME 2> /dev/null
 	fi	
 	
 	# Data processing
@@ -159,8 +159,7 @@ DATA_ANALYSIS ()
 			OMARKER=`echo "scale=2; $OR_sec - $DK_sec" | bc -l`
 			sac <<- EOF
 			r *$st*
-			rmean 
-			rtr
+			rtr; rmean 
 			taper
 			ch evla $LAT
 			ch evlo $LON
@@ -398,7 +397,7 @@ DECO_DECI ()
 
 	cd ./PROCESS
 	[[ ! `ls ./*$SAC 2> /dev/null` ]] && 
-		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the lof file." --width=220 2> /dev/null && continue
+		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the log file." --width=220 2> /dev/null && continue
 	
 	META_TYPE=`echo $META_TYPE | tr '[:upper:]' '[:lower:]'`
 	if [ "$META_TYPE" = "pz" ]; then
@@ -447,7 +446,7 @@ ROTATE ()
 	saclst KSTNM f ./*$SAC | awk '{print $2}'| sort | uniq > ./.st.txt
 	
 	cat ./.st.txt | while read ST; do
-		if [ \( -z ./*$ST*$XXE* \) -o \( ! -f ./*$ST*$XXN* \) ]; then
+		if [ \( ! -f ./*$ST*$XXE* \) -o \( ! -f ./*$ST*$XXN* \) ]; then
 			echo -e "$XXN or $XXE component is missing... $ST station Moved to TRASH." >> $LOG_FILE
 			mv *$ST* ./TRASH 
 		else	
@@ -563,7 +562,7 @@ MERGE ()
 		fi	
 				
 		saclst KSTNM f ./*$SAC  | awk '{print $2}' | sort | uniq > ./.st.txt
-		for ST in `cat ./.st.txt`; do
+		fcat ./.st.txt | while read ST; do
 			for COM in $XXE $XXN $XXZ; do
 			
 				numtr=`ls ./*$ST*$COM* 2> /dev/null | wc -l`
