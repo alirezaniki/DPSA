@@ -1335,13 +1335,10 @@ Yfile2SAC ()
 	IR
 	180
 	EOF
-	mv `ls -S | head -1` $INPUT
-	cd $INPUT
-	mseed2sac `ls -S | head -1`
-	for data in .*; do
-		mv $data ${data#*.} 2> /dev/null
-	done
-	rm `ls -S | head -1` 2> /dev/null
+	mv `ls -S | head -1` $INPUT; cd $INPUT
+	jackseis ./`ls -S | head -1` --output-dir=./ --output-format="sac" 
+	[ ! -d ./Mseed ] && mkdir Mseed 
+	mv `ls -S | head -1` Mseed
 }		
 
 
@@ -1670,7 +1667,7 @@ while true; do    # Make it possible to return to the main menu from submenu
 										[ "$INF_CHECK" -ne 14 ] && 
 											zenity --error --title="Error Dialog" --text="Event info is incomplete" --width=180 2> /dev/null && continue
 												
-										zenity --question --title "Info Dialog" --text='Load the prior event info?' --width=200  2> /dev/null
+										zenity --question --title "Info Dialog" --text='Load the current event info?' --width=200  2> /dev/null
 										ANS=$?
 										case $ANS in
 											0) 
