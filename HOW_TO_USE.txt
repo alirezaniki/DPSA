@@ -39,6 +39,9 @@ https://github.com/GNOME/zenity
 USAGE TIPS
 -----------
 ***~~Before doing anything, Modify lines 17-21 of DPSA code and set the proper paths~~***
+***~~ Use the st_st_dis/st_st_dist bash code to calculate station-station distances. Put 
+the output in $DPSA/HOME directory and hide it (.sta_sta_dist.txt).
+We'll need this file in station distribution smoothness procedure.
 
 
 1) Data Query -------1-1) Seismic Data Acquisition
