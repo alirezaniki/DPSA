@@ -1,0 +1,148 @@
+# Inversion subdirectory (where all is saved locally)
+INVERSION_DIR   
+------------------------------------------------
+# Greens functions
+GFDB_STEP1    
+GFDB_STEP2    
+GFDB_STEP3    
+------------------------------------------------
+EFFECTIVE_DT_ST1 0.5
+EFFECTIVE_DT_ST2 0.5
+EFFECTIVE_DT_ST3 0.5
+---------------------------------------------
+# Data
+DATA_DIR   
+DATA_FILE        
+STAT_INP_FILE    stations.dat
+EPIC_DIST_MIN    
+EPIC_DIST_MAX    
+----------------------------------------------
+# Channels, components, weighting
+SW_WEIGHT_DIST  
+COMP_2_USE       une
+------------------------------------------------- 
+LATITUDE_NORTH  
+LONGITUDE_EAST  
+YEAR      
+MONTH      
+DAY        
+HOUR      
+MIN       
+SEC      
+------------------------------------------
+# Inversion flow
+NUM_INV_STEPS    1     
+--------------------------------------
+# Phases windowing, step 1
+PHASES_2_USE_ST1    a
+WIN_START_A_ST1    
+WIN_TAPER_A_ST1     
+------------------------------------------------------------
+# Inversion of point source parameters step 1
+SW_RAPIDSTEP1    False
+DEPTH_1         
+DEPTH_2          
+DEPTH_STEP       5
+DEPTH_UPPERLIM  
+DEPTH_BOTTOMLIM  
+STRIKE_1         0
+DIP_1            0
+RAKE_1           0
+STRIKE_2         180
+DIP_2            90
+RAKE_2           90
+STRIKE_STEP      30
+DIP_STEP         30
+RAKE_STEP        30
+SCAL_MOM_1      
+SCAL_MOM_2      
+SCAL_MOM_STEP   
+SW_FILTERNOISY  
+SW_FULLMT      
+--------------------------------------------------
+# Parameters for inversion step 1
+BP_F1_STEP1      
+BP_F2_STEP1       
+BP_F3_STEP1      
+BP_F4_STEP1      
+MISFIT_MET_STEP1 ampspec_l2norm 
+INV_MODE_STEP1   
+-------------------------------------------------
+# Plot parameters for inversion step 1
+MAX_STAT_2_PLOT  50
+DATA_PLOT_STEP1  amsp
+FILT_PLOT_STEP1  filtered
+AMPL_PLOT_STEP1  norm
+START_PLOT_STEP1 0
+LEN_PLOT_STEP1   
+TICK_PLOT_STEP1  
+AMPL_PLOT_STEP1  norm
+MISFIT_DEP_RANGE 4
+MISFIT_DEP_TICK  1
+--------------------------------------------------
+==================================================
+# Inversion of point source parameters step 2
+CC_SHIFT1       
+CC_SHIFT2        
+REL_NORTH_1     
+REL_NORTH_2      
+REL_NORTH_STEP   
+REL_EAST_1       
+REL_EAST_2       
+REL_EAST_STEP    
+REL_TIME_1       0 
+REL_TIME_2      
+REL_TIME_STEP    
+================================================
+# Parameters for inversion step 2
+BP_F1_STEP2   
+BP_F2_STEP2   
+BP_F3_STEP2   
+BP_F4_STEP2   
+MISFIT_MET_STEP2 l2norm 
+INV_MODE_STEP2   grid
+================================================
+# Phases windowing, step 2
+PHASES_2_USE_ST2  a
+WIN_START_A_ST2  
+WIN_TAPER_A_ST2  
+========================================================
+# Plot parameters for inversion step2
+DATA_PLOT_STEP2  seis
+FILT_PLOT_STEP2  filtered
+START_PLOT_STEP2  0
+LEN_PLOT_STEP2    
+TICK_PLOT_STEP2  
+AMPL_PLOT_STEP2  norm
+=======================================================
+*******************************************************
+# Inversion of point source parameters step 3
+SW_RELOCATE    True
+BP_F1_STEP3   
+BP_F2_STEP3   
+BP_F3_STEP3   
+BP_F4_STEP3   
+*********************************************************
+MISFIT_MET_STEP3 ampspec_l1norm 
+INV_MODE_STEP3   grid
+REL_RUPT_VEL_1   0.7
+REL_RUPT_VEL_2   0.7
+REL_RUPT_VEL_S   0.1
+RADIUS_STEP      500
+NUKL_X_STEP      500
+NUKL_Y_STEP      500
+SW_BPRISETIME    True
+SW_RELOCATE      True
+********************************************
+# Phases windowing, step 3
+PHASES_2_USE_ST3  a
+WIN_START_A_ST3   
+WIN_TAPER_A_ST3  
+*********************************************************
+# Plot parameters for inversion step3
+DATA_PLOT_STEP3  amsp
+FILT_PLOT_STEP3  filtered
+START_PLOT_STEP3 0
+LEN_PLOT_STEP3   300
+TICK_PLOT_STEP3  120
+AMPL_PLOT_STEP3  norm
