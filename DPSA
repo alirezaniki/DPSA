@@ -181,7 +181,11 @@ DATA_ANALYSIS ()
 
 ST_SELECTION_LOCAL ()
 {
-	rm .azi_dis .st_coor 2> /dev/null
+	echo -e "\nSmoothing Stations distribution ... "
+	[ ! -f "$DPSA_HOME/.sta_sta_dist.txt" ] && echo -e "\nDPSA_HOME/.sta_sta_dist.txt file is missing.\n \
+	Provide this file or simply disable this feature in config file..." && continue
+	
+	rm .eve_st_azi_dis .no_move .azi_dis .st_coor 2> /dev/null
 	saclst KSTNM f ./*$SAC | awk '{print $2}' | sort | uniq > ./.stations	
 	cat ./.stations | while read ST; do
 		AZI=`saclst AZ f *$ST* | awk '{print $2}' | head -1`
@@ -195,25 +199,32 @@ ST_SELECTION_LOCAL ()
 	
 	num_st=`cat .st_coor | wc -l`
 
-	cat .st_coor | while read line; do
-		STNM=`echo $line | awk '{print $1}'`
-		STLA=`echo $line | awk '{print $2}'`
-		STLO=`echo $line | awk '{print $3}'`
-		sed -i "/e =/c\e = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
-		cat .st_coor | while read line; do
-			st=`echo $line | awk '{print $1}'`
-			[ "$st" = "$STNM" ] && continue
-			stla=`grep "$st" .st_coor | awk '{print $2}'`
-			stlo=`grep "$st" .st_coor | awk '{print $3}'`
-			sed -i "/s =/c\s = model.Event(lat=$stla, lon=$stlo)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
-			INFO=`python $PYROCKO/dist_azi_bazi.py`
-			dist=`echo $INFO | awk '{print $1}'`	
-			if (( `echo "$dist == 0.0" | bc -l` )); then
-				[ ! `grep "$st" .no_move 2> /dev/null | head -n 1` ] && mv ./*$st* ./TRASH && echo -e "$st\n$STNM" >> .no_move && sed -i "/$st/d" .st_coor
+	cat .st_coor | while read line1; do
+		stnm1=`echo $line1 | cut -f 1 -d " "`
+		cat .st_coor | while read line2; do
+			stnm2=`echo $line2 | cut -f 1 -d " "`
+			[ "$stnm2" = "$stnm1" ] && continue
+			dist=`grep -w "$stnm1 $stnm2" $DPSA_HOME/.sta_sta_dist.txt | cut -f 3 -d " "`
+			
+			if [ -z "$dist" ]; then
+				STLA=`echo $line1 | awk '{print $2}'`
+				STLO=`echo $line1 | awk '{print $3}'`
+				sed -i "/e =/c\e = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+				stla=`echo $line2 | awk '{print $2}'`
+				stlo=`echo $line2 | awk '{print $3}'`
+				sed -i "/s =/c\s = model.Event(lat=$stla, lon=$stlo)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+				INFO=`python $PYROCKO/dist_azi_bazi.py`
+				dist=`echo $INFO | awk '{print $1}'`
+				echo "$stnm1 $stnm2 $dist" >> $DPSA_HOME/.sta_sta_dist.txt 
+			fi
+				
+			if (( `echo "$dist == 0.0" | bc -l` )); then    # This part comes to use if there are two sensors in a station (e.g ABCD.00 ABCD.10)
+				[ ! `grep -w "$stnm1" .no_move 2> /dev/null` ] && mv ./*$stnm1* ./TRASH && echo -e "$stnm1" >> .no_move && sed -i "/$stnm1/d" .st_coor
 				continue
 			fi
-				echo "$STNM $st $dist" >> .st_st_dist	
-		done 
+				echo "$stnm1 $stnm2 $dist"
+				echo "$stnm1 $stnm2 $dist" >> .st_st_dist
+		done 	
 	done	
 	
 	cat .st_coor | while read line; do
@@ -250,17 +261,16 @@ ST_SELECTION_LOCAL ()
 	done >> .MDI	
 	
 	num_st=`cat .st_coor | wc -l`
-	N=`echo "$num_st / 4" | bc -l` && N=`round $N 0`
+	N=`echo "$num_st / 3" | bc -l` && N=`round $N 0`
 	
 	cat .MDI | sort -n -k 2 | head -n $N > .rm_select
 		
 	cat .rm_select | while read line; do
 		STNM=`echo $line | cut -f 1 -d " "`		
 		MDI=`echo $line | cut -f 2 -d " "`
-		DIS_LIM=`echo "$MDI * 3" | bc -l`
-			
+		DIS_LIM=`echo "$MDI * 3" | bc -l`			
 		i=0
-		for st in `cat .stations`; do	
+		cat .stations | while read st; do	
 			[ "$st" = "$STNM" ] && continue
 			dist=`grep "$st $STNM" .st_st_dist | cut -f 3 -d " "`
 			if (( `echo "$dist < $DIS_LIM" | bc -l` )) && [ `grep "$st" .final_del 2> /dev/null` ]; then
@@ -272,8 +282,9 @@ ST_SELECTION_LOCAL ()
 
 		cat .final_del 2> /dev/null | while read station; do
 			mv *$station* ./TRASH 2> /dev/null
+			echo "$station moved to Trash. (Smoothing step)"
 			sed -i "/$station/d" .st_coor
-		done	
+		done
 }
 
 
@@ -393,9 +404,8 @@ ST_SELECTION_ONLINE ()
 	
 DECO_DECI ()
 {	
-	[ "$SMOOTH_COVERAGE" = "yes" ] && ST_SELECTION_LOCAL
-
 	cd ./PROCESS
+	[ "$SMOOTH_COVERAGE" = "yes" ] && ST_SELECTION_LOCAL
 	[[ ! `ls ./*$SAC 2> /dev/null` ]] && 
 		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the log file." --width=220 2> /dev/null && continue
 	
@@ -469,7 +479,7 @@ ROTATE ()
 				cut 0 $END1
 				r ./*$ST*$XXN* ./*$ST*$XXE* 
 				rotate to GCP
-				w ./ROT.$ST.$XXR.SAC ./ROT.$ST.$XXT.SAC
+				w ./ROT.$ST.$XXR.$SAC ./ROT.$ST.$XXT.$SAC
 				q
 				END
 			else
@@ -477,7 +487,7 @@ ROTATE ()
 				cut 0 $END2
 				r ./*$ST*$XXN* ./*$ST*$XXE* 
 				rotate to GCP
-				w ./ROT.$ST.$XXR.SAC ./ROT.$ST.$XXT.SAC
+				w ./ROT.$ST.$XXR.$SAC ./ROT.$ST.$XXT.$SAC
 				q
 				END
 			fi
