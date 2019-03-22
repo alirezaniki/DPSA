@@ -1,0 +1,20 @@
+#!/bin/bash
+
+station_file="./stations.dat"
+
+cat $station_file | while read line; do
+	stnm=`echo $line | awk '{print $2}'`
+	stla=`echo $line | awk '{print $3}'`
+	stlo=`echo $line | awk '{print $4}'`
+	sed -i "/\<e = \>/c\e = model.Event(lat=$stla, lon=$stlo.)" dist.py 2> /dev/null
+	cat $station_file | while read line; do
+		stnm1=`echo $line | awk '{print $2}'`
+		[ "$stnm1" = "$stnm" ] && continue
+		stla1=`echo $line | awk '{print $3}'`
+		stlo1=`echo $line | awk '{print $4}'`
+		sed -i "/\<s = \>/c\s = model.Station(lat=$stla1., lon=$stlo1)" dist.py 2> /dev/null
+		dist=`python dist.py`
+		echo "$stnm $stnm1 $dist" >> sta_sta_dist.txt
+		echo "$stnm1 $stnm $dist" >> sta_sta_dist.txt
+	done	
+done
