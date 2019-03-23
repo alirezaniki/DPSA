@@ -1,7 +1,9 @@
 Whats is DPSA?
 --------------
 
-DPSA is a BASH code aimed on automating some of routine tasks in data processing and
+DPSA v.1.2
+
+This is a BASH code aimed on automating some of routine tasks in data processing and
 Source analysis using KIWI tools and PYROCKO package. 
 There is no need of significant pre-processes to use this code. All you need to do is  
 To install the following Packages:
@@ -39,10 +41,13 @@ https://github.com/GNOME/zenity
 USAGE TIPS
 -----------
 ***~~Before doing anything, Modify lines 17-21 of DPSA code and set the proper paths~~***
-***~~ Use the st_st_dis/st_st_dist bash code to calculate station-station distances. Put 
+***~~ 
+Use the st_st_dis/st_st_dist bash code to calculate station-station distances. Put 
 the output in $DPSA/HOME directory and hide it (.sta_sta_dist.txt).
 We'll need this file in station distribution smoothness procedure.
+
 ***~~ Hide the Tmeplate file in main directory (.Template)
+***~~ It is recommended to complete the event info file before doing anything related to an event.
 
 
 1) Data Query -------1-1) Seismic Data Acquisition
