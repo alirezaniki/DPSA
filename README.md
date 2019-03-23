@@ -4,7 +4,7 @@ An Utility to Data Processing and Source Analysis
 
 Alireza Niksejel <alireza.niksejel@ut.ac.ir>
 
-Version 1.2 _ Jun_2018
+Version 1.2 _ Mar_2019
 
 DPSA is an user friendly GUI aimed on data processing and source analysis using KIWI tools and Pyrocko package.
 
