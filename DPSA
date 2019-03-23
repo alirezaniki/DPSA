@@ -14,11 +14,11 @@
 
 ################### Parent Directories
 
-DPSA_HOME="/home/alireza/DPSA-master"
-KIWI_WORK_DIR="/home/alireza/KIWI/WORK"
-KIWI_RESULTS_DIR="/home/alireza/KIWI/RESULTS"
-KIWI_DATA_DIR="/home/alireza/KIWI/DATA"
-KIWI_GFDB_DIR="/home/alireza/KIWI/GFDB"
+DPSA_HOME="/home/alireza/Desktop/DPSA-master"
+KIWI_WORK_DIR="/home/alireza/Desktop/KIWI/WORK"
+KIWI_RESULTS_DIR="/home/alireza/Desktop/KIWI/RESULTS"
+KIWI_DATA_DIR="/home/alireza/Desktop/KIWI/DATA"
+KIWI_GFDB_DIR="/home/alireza/Desktop/KIWI/GFDB"
 SEISAN_HOME="/home/alireza/Programs/Seismo"
 
 
@@ -81,11 +81,6 @@ CONF_FILE ()
 	
 	#------- MAP Configs --------#
 	export DRAW_FULL_MAP=yes
-	export MAKE_TOPO=no
-	export CPT=etopo1
-	export GRID_FILE=Globe.grd
-	export MAP_DPI=400
-	
 	EOF
 
 	NUM_LINE=`grep -c "=" $CONF_FILE`
@@ -108,7 +103,7 @@ round ()
 {
 echo $(printf %.$2f $(echo "scale=$2;(((10^$2)*$1)+0.5)/(10^$2)" | bc))
 }
-
+	
 
 DATA_ANALYSIS ()
 {
@@ -147,16 +142,6 @@ DATA_ANALYSIS ()
 			echo -e "Not enough info available for $st station. Moved to TRASH ..." >> $LOG_FILE
 			mv *$st* ./PROCESS/TRASH 
 		else
-			read -a DATA_KZTIME <<< `saclst kztime f *$st* | awk '{print $2}' | sort -n | uniq`
-			[ "${#DATA_KZTIME[@]}" -ne "1" ] && 
-				zenity --error --title="Data Error" --text="Some data with different KZTIME detected." --width=280 2> /dev/null && break 2	
-				
-			DATA_H="${DATA_KZTIME%%:*}" 
-			DATA_S="${DATA_KZTIME##*:}" 
-			DATA_M="${DATA_KZTIME:3:2}"   
-			DK_sec=`echo "scale=2; ($DATA_H * 3600) + ($DATA_M * 60) + $DATA_S" | bc -l` 
-			OR_sec=`echo "scale=2; ($HOUR * 3600) + ($MIN * 60) + $FULL_SEC" | bc -l`
-			OMARKER=`echo "scale=2; $OR_sec - $DK_sec" | bc -l`
 			sac <<- EOF
 			r *$st*
 			rtr; rmean 
@@ -168,8 +153,6 @@ DATA_ANALYSIS ()
 			ch stlo $STLO
 			ch stel $STEL
 			ch kevnm $NAME
-			ch O $OMARKER
-			ch lovrok true
 			wh; w over
 			q
 			EOF
@@ -182,6 +165,7 @@ DATA_ANALYSIS ()
 ST_SELECTION_LOCAL ()
 {
 	echo -e "\nSmoothing Stations distribution ... "
+	
 	[ ! -f "$DPSA_HOME/.sta_sta_dist.txt" ] && echo -e "\nDPSA_HOME/.sta_sta_dist.txt file is missing.\n \
 	Provide this file or simply disable this feature in config file..." && continue
 	
@@ -190,10 +174,10 @@ ST_SELECTION_LOCAL ()
 	cat ./.stations | while read ST; do
 		AZI=`saclst AZ f *$ST* | awk '{print $2}' | head -1`
 		DIS=`saclst DIST f *$ST* | awk '{print $2}' | head -1`
-		LAT=`grep $ST $DPSA_HOME/.stations.dat | awk '{print $3}'`
-		LON=`grep $ST $DPSA_HOME/.stations.dat | awk '{print $4}'`
+		LAT=`grep -w $ST $DPSA_HOME/.stations.dat | awk '{print $3}'`
+		LON=`grep -w $ST $DPSA_HOME/.stations.dat | awk '{print $4}'`
 		echo "$ST $DIS $AZI" >> .eve_st_azi_dis
-		[ \( -z $LAT \) -o \( -z $LON \) ] && continue	
+		[ \( -z "$LAT" \) -o \( -z "$LON" \) ] && continue	
 		echo "$ST $LAT $LON" >> .st_coor
 	done 
 	
@@ -218,7 +202,7 @@ ST_SELECTION_LOCAL ()
 				echo "$stnm1 $stnm2 $dist" >> $DPSA_HOME/.sta_sta_dist.txt 
 			fi
 				
-			if (( `echo "$dist == 0.0" | bc -l` )); then    # This part comes to use if there are two sensors in a station (e.g ABCD.00 ABCD.10)
+			if (( `echo "$dist == 0.0" | bc -l` )); then    # This part comes to use when there are two sensors in a station (e.g ABCD.00 ABCD.10)
 				[ ! `grep -w "$stnm1" .no_move 2> /dev/null` ] && mv ./*$stnm1* ./TRASH && echo -e "$stnm1" >> .no_move && sed -i "/$stnm1/d" .st_coor
 				continue
 			fi
@@ -268,12 +252,12 @@ ST_SELECTION_LOCAL ()
 	cat .rm_select | while read line; do
 		STNM=`echo $line | cut -f 1 -d " "`		
 		MDI=`echo $line | cut -f 2 -d " "`
-		DIS_LIM=`echo "$MDI * 3" | bc -l`			
+		DIS_LIM=`echo "$MDI * 3" | bc -l`
 		i=0
 		cat .stations | while read st; do	
 			[ "$st" = "$STNM" ] && continue
-			dist=`grep "$st $STNM" .st_st_dist | cut -f 3 -d " "`
-			if (( `echo "$dist < $DIS_LIM" | bc -l` )) && [ `grep "$st" .final_del 2> /dev/null` ]; then
+			dist=`grep -w "$st $STNM" .st_st_dist | cut -f 3 -d " "`
+			if (( `echo "$dist < $DIS_LIM" | bc -l` )) && [ `grep -w "$st" .final_del 2> /dev/null` ]; then
 				i=$((i+1))
 			fi
 		done
@@ -284,123 +268,9 @@ ST_SELECTION_LOCAL ()
 			mv *$station* ./TRASH 2> /dev/null
 			echo "$station moved to Trash. (Smoothing step)"
 			sed -i "/$station/d" .st_coor
-		done
+		done	
 }
 
-
-ST_SELECTION_ONLINE ()
-{
-	[ ! -d  $KIWI_DATA_DIR/$NM ] && mkdir $KIWI_DATA_DIR/$NM || rm -r -f $KIWI_DATA_DIR/$NM/* 2> /dev/null
-	cp $DATA_QUERY/data/$NM/prepared/* $KIWI_DATA_DIR/$NM
-	cd $KIWI_DATA_DIR/$NM
-	
-	EVLA=`grep "latitude" event.txt | awk '{print $3}'` 
-	EVLO=`grep "longitude" event.txt | awk '{print $3}'` 
-	sed -i "/e =/c\e = model.Event(lat=$EVLA, lon=$EVLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
-
-	grep -v "^  " stations.txt > stations.dat
-	
-	num_st=`cat stations.dat | wc -l`
-	
-	if [ "$num_st" -gt "$STA_LIM" ]; then
-	mkdir ../extra_$EVENT 2> /dev/null
-	
-		cat stations.dat | while read line; do
-			STNM=`echo $line | awk '{print $1}'`
-			STLA=`echo $line | awk '{print $2}'`
-			STLO=`echo $line | awk '{print $3}'`
-			sed -i "/s =/c\s = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
-			INFO=`python $PYROCKO/dist_azi_bazi.py`
-			DIST=`echo $INFO | awk '{print $1}'`
-			AZIM=`echo $INFO | awk '{print substr($2,2,6)}'`
-			(( `echo "$AZIM < 0" | bc -l` )) && AZIM=`echo "scale=2; 360 + $AZIM" | bc -l`
-			echo "$STNM $DIST $AZIM"
-		
-	done > .eve_st_azi_dis
-
-		cat stations.dat | while read line; do
-			STNM=`echo $line | awk '{print $1}'`
-			STLA=`echo $line | awk '{print $2}'`
-			STLO=`echo $line | awk '{print $3}'`
-			sed -i "/e =/c\e = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
-			cat stations.dat | while read line; do
-				st=`echo $line | awk '{print $1}'`
-				[ "$st" = "$STNM" ] && continue
-				stla=`grep "$st" stations.dat | awk '{print $2}'`
-				stlo=`grep "$st" stations.dat | awk '{print $3}'`
-				sed -i "/s =/c\s = model.Event(lat=$stla, lon=$stlo)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
-				INFO=`python $PYROCKO/dist_azi_bazi.py`
-				dist=`echo $INFO | awk '{print $1}'`	
-				if (( `echo "$dist == 0.0" | bc -l` )); then
-					[ ! `grep "$st" .no_move 2> /dev/null | head -n 1` ] && mv ./*$st* ../extra_$EVENT && echo -e "$st\n$STNM" >> .no_move && sed -i "/$st/d" stations.dat
-					continue
-				fi
-				echo "$STNM $st $dist" >> .st_st_dist	
-			done 
-		done	
-	
-		cat stations.dat | while read line; do
-			ST1=`echo $line | awk '{print $1}'`
-			DI1=`grep -w "$ST1" .eve_st_azi_dis | cut -f 2 -d " "`
-			AZ1=`grep -w "$ST1" .eve_st_azi_dis | cut -f 3 -d " "`
-			
-			read -a STATIONS <<< `grep "^$ST1" .st_st_dist | sort -n -k 3 | head -n 3`	
-			ST2=`echo ${STATIONS[@]} | cut -f 2 -d " "`
-			ST3=`echo ${STATIONS[@]} | cut -f 5 -d " "`
-			ST4=`echo ${STATIONS[@]} | cut -f 8 -d " "`
-			
-			DI2=`grep -w "$ST2" .eve_st_azi_dis | cut -f 2 -d " "`
-			AZ2=`grep -w "$ST2" .eve_st_azi_dis | cut -f 3 -d " "`
-			
-			DI3=`grep -w "$ST3" .eve_st_azi_dis | cut -f 2 -d " "`
-			AZ3=`grep -w "$ST3" .eve_st_azi_dis | cut -f 3 -d " "`				
-				
-			DI4=`grep -w "$ST4" .eve_st_azi_dis | cut -f 2 -d " "`
-			AZ4=`grep -w "$ST4" .eve_st_azi_dis | cut -f 3 -d " "`				
-			
-			DI12=`echo "scale=1; (($DI1 - $DI2) * ($DI1 - $DI2)) + (($AZ1 - $AZ2) * ($AZ1 - $AZ2))" | bc -l`
-			DI12=`bc -l <<< "sqrt($DI12)"`
-			
-			DI13=`echo "scale=1; (($DI1 - $DI3) * ($DI1 - $DI3)) + (($AZ1 - $AZ3) * ($AZ1 - $AZ3))" | bc -l`
-			DI13=`bc -l <<< "sqrt($DI13)"`	
-				
-			DI14=`echo "scale=1; (($DI1 - $DI4) * ($DI1 - $DI4)) + (($AZ1 - $AZ4) * ($AZ1 - $AZ4))" | bc -l`
-			DI14=`bc -l <<< "sqrt($DI14)"`
-			
-			MDI=`echo "scale=1; ($DI12 + $DI13 + $DI14) / 3" | bc -l`
-			echo "$ST1 $MDI"
-			
-		done >> .MDI
-		
-		num_st=`cat stations.dat | wc -l`
-		N=`echo "$num_st / 4" | bc -l` && N=`round $N 0`
-		
-		cat .MDI | sort -n -k 2 | head -n $N > .rm_select
-		
-		cat .rm_select | while read line; do
-			STNM=`echo $line | cut -f 1 -d " "`		
-			MDI=`echo $line | cut -f 2 -d " "`
-			DIS_LIM=`echo "$MDI * 3" | bc -l`
-			
-			i=0
-			cat .stations | while read st; do	
-				[ "$st" = "$STNM" ] && continue
-				dist=`grep "$st $STNM" .st_st_dist | cut -f 3 -d " "`
-				if (( `echo "$dist < $DIS_LIM" | bc -l` )) && [ `grep "$st" .final_del 2> /dev/null` ]; then
-					i=$((i+1))
-				fi
-			done
-			[ "$i" -eq "0" ] && echo "$STNM" >> .final_del	
-		done	
-
-			cat .final_del 2> /dev/null | while read station; do
-				mv *$station* ../extra_$EVENT 2> /dev/null
-				sed -i "/$station/d" stations.dat
-			done	
-	fi
-}	
-
-	
 	
 DECO_DECI ()
 {	
@@ -410,6 +280,8 @@ DECO_DECI ()
 		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the log file." --width=220 2> /dev/null && continue
 	
 	META_TYPE=`echo $META_TYPE | tr '[:upper:]' '[:lower:]'`
+	jackseis ./*$SAC --output-dir=./ --output-format="sac" --output="$data" --force --downsample="$DSP_SR"
+	
 	if [ "$META_TYPE" = "pz" ]; then
 		for data in `ls ./*$SAC`; do
 			ST=`saclst KSTNM f $data | awk '{print $2}'`
@@ -419,7 +291,6 @@ DECO_DECI ()
 				echo "No metadata available for $data. Moved to TRASH ..." >> $LOG_FILE 
 				mv $data ./TRASH
 			else	
-			jackseis ./$data --output-dir=./ --output-format="sac" --output="$data" --force --downsample="$DSP_SR"
 				sac <<- EOF
 				r $data
 				transfer from polezero subtype $RESP/$META_SHAPE_PZ to $TR_TO freql $TR_F1 $TR_F2 $TR_F3 $TR_F4
@@ -437,7 +308,6 @@ DECO_DECI ()
 				echo "There is no metadata for $data. Moved to TRASH ..." >> $LOG_FILE
 				mv $data ./TRASH
 			else	
-				jackseis ./$data --output-dir=./ --output-format="sac" --output="$data" --force --downsample="$DSP_SR"				
 				sac <<- EOF
 				r $data
 				div 1e9
@@ -457,7 +327,7 @@ ROTATE ()
 	
 	cat ./.st.txt | while read ST; do
 		if [ \( ! -f ./*$ST*$XXE* \) -o \( ! -f ./*$ST*$XXN* \) ]; then
-			echo -e "$XXN or $XXE component is missing... $ST station Moved to TRASH." >> $LOG_FILE
+			echo -e "$XXN or $XXE component is missing... $ST station Moved to TRASH" >> $LOG_FILE
 			mv *$ST* ./TRASH 
 		else	
 			sac <<- END
@@ -517,7 +387,7 @@ SAC2MSEED ()
 
 DATA_TYPE ()
 {
-	[[ ! `ls ./*$SAC 2> /dev/null` ]] &&
+	[[ ! `ls ./*$SAC 2> /dev/null` ]] && 
 		zenity --error --title="Data Error" --text="All input data moved to TRASH. Check the log file." --width=220 2> /dev/null && continue
 	
 	[ ! -d  $KIWI_DATA_DIR/$NAME ] && mkdir $KIWI_DATA_DIR/$NAME
@@ -559,7 +429,7 @@ MERGE ()
 	
 	read -a delta <<< `saclst DELTA f ./*$SAC | awk '{print $2}'| sort -n | uniq`
 	[ "${#delta[@]}" -ne "1" ] && 
-		zenity --error --title="Header Error" --text="Some data with different Sampling rates detected." --height=100 2> /dev/null && break 2
+		zenity --error --title="Header Error" --text="Some data with different Sampling rates detected." --width=290 2> /dev/null && continue
 	
 	Name=`zenity --forms --title="Merge Question" --text="Please enter a name to save merged data" --add-entry="Enter Name" 2> /dev/null`	
 	
@@ -572,19 +442,20 @@ MERGE ()
 		fi	
 				
 		saclst KSTNM f ./*$SAC  | awk '{print $2}' | sort | uniq > ./.st.txt
-		fcat ./.st.txt | while read ST; do
+		cat ./.st.txt | while read ST; do
 			for COM in $XXE $XXN $XXZ; do
-			
-				numtr=`ls ./*$ST*$COM* 2> /dev/null | wc -l`
+				read -a traces <<< `ls *$ST*$COM* 2> /dev/null | grep -w "$ST" 2> /dev/null`
+				# grep command used to avoid the error related to SAC header KSTNM which appears when there are two similar named stations (e.g. TEH and TEHA).
+				numtr=${#traces[@]}
 				if [ "$numtr" -eq "0" ]; then
 					continue
 					
 				elif [ "$numtr" -eq "1" ]; then 
-					cp ./*$ST*$COM* $MERGE/$Name/M.$ST.$COM.SAC 
+					cp $traces $MERGE/$Name/M.$ST.$COM.SAC 
 					
 				else	
 					sac <<- END 
-					r *$ST*$COM*
+					r ${traces[@]}
 					merge gap $MERGE_GAP
 					w $MERGE/$Name/M.$ST.$COM.SAC	
 					q
@@ -598,22 +469,43 @@ MERGE ()
 }
 
 
-GAP ()
+
+GAP_INFO ()
 {		
 	[ \( ! -d $KIWI_RESULTS_DIR/$NAME \) -o \( ! -f  $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt \) ] &&
 		zenity --error --title="Error Dialog" --text="You must run a source analysis first." --width=260 2> /dev/null && continue	
+	cd $KIWI_RESULTS_DIR/$NAME
 		
-	read -a NUM <<< `grep -n "disaz" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | cut -f 1 -d :`
-	L1=`echo "${NUM[0]} + 1" | bc -l`
-	L2=`echo "${NUM[1]} - 1" | bc -l`
-	read -r -a AZI <<< `sed -n "$L1,"$L2"p" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | awk '{print $10}' | sort -nr | uniq`
+	cat $KIWI_RESULTS_DIR/$NAME/stations.used | while read line; do
+		sta=`echo $line | cut -f 2 -d " "`
+		sla=`echo $line | cut -f 3 -d " "`
+		slo=`echo $line | cut -f 4 -d " "`
+		[ `grep -w -c "$sta" $KIWI_RESULTS_DIR/$NAME/stations.unused 2> /dev/null` -eq 3 ] 2> /dev/null && continue
+		echo "$sla $slo $sta"
+	done > .stations.info
+	
+	sed -i "/e =/c\e = model.Event(lat=$LAT, lon=$LON)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+	cat .stations.info | while read line; do
+		STNM=`echo $line | awk '{print $3}'`
+		STLA=`echo $line | awk '{print $1}'`
+		STLO=`echo $line | awk '{print $2}'`
+		sed -i "/s =/c\s = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+		INFO=`python $PYROCKO/dist_azi_bazi.py`
+		AZIM=`echo $INFO | awk '{print substr($2,2,6)}'`
+		(( `echo "$AZIM < 0" | bc -l` )) && AZIM=`echo "scale=2; 360 + $AZIM" | bc -l`
+		echo "$STNM $AZIM"
+		
+	done > .eve_st_azi	
+		
+	
+	read -r -a AZI <<< `cat .eve_st_azi | awk '{print $2}' | sort -n`
 
 	# FIRST AZIMUTHAL GAP
 	NUM_ST=${#AZI[@]}
 	for ((i=0; i < $((NUM_ST - 1)); i+=1 )); do 
-		DIFF[$i]=`echo "scale=2; ${AZI[$i]} - ${AZI[$i+1]}" | bc -l`
+		DIFF[$i]=`echo "scale=2; ${AZI[$i+1]} - ${AZI[$i]}" | bc -l`
 	done
-	DIFF+=(`echo "scale=2; (360 - ${AZI[0]}) + ${AZI[((NUM_ST-1))]}" | bc -l`)
+	DIFF+=(`echo "scale=2; (360 - ${AZI[((NUM_ST-1))]}) + ${AZI[0]}" | bc -l`)
 	FIRST_G=`echo ${DIFF[@]} | tr " " "\n" | sort -nr | head -1`
 		
 	# SECOND AZIMUTHAL GAP
@@ -625,16 +517,15 @@ GAP ()
 		NUM_ST=${#AZIM[@]}
 		
 		for ((j=0; j < $((NUM_ST - 1)); j+=1 )); do 
-			DIF[$j]=`echo "scale=2; ${AZIM[$j]} - ${AZIM[$j+1]}" | bc -l`
+			DIF[$j]=`echo "scale=2; ${AZIM[$j+1]} - ${AZIM[$j]}" | bc -l`
 		done
 		
-		DIF+=(`echo "scale=2; (360 - ${AZIM[0]}) + ${AZIM[((NUM_ST-1))]}" | bc -l`)
+		DIF+=(`echo "scale=2; (360 - ${AZIM[((NUM_ST-1))]}) + ${AZIM[0]}" | bc -l`)
 		SEC_AZ[$i]=`echo ${DIF[@]} | tr " " "\n" | sort -nr | head -1`		
 		AZIM=(${AZI[@]})
 	done
 	
 	SECOND_G=`echo "${SEC_AZ[@]}" | tr " " "\n" | sort -nr | head -1`
-	echo "First AG= $FIRST_G deg\nSecond AG= $SECOND_G deg" >> $LOG_FILE
 	zenity --info --title="Gap Info" --text="First Azimuthal Gap = $FIRST_G deg\nSecond Azimuthal Gap = $SECOND_G deg" --width=260 2> /dev/null
 }	
 
@@ -649,248 +540,144 @@ MAP ()
 	if [ -f $KIWI_RESULTS_DIR/$NAME/step2.ptsolution.gmt ]; then 
 		Focal_inf="$KIWI_RESULTS_DIR/$NAME/step2.meca.dat"
 		EQ_INFO="$KIWI_RESULTS_DIR/$NAME/step2.earthquakeinfo.dat"
-		INV="MT"
-			elif [ -f $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt ]; then 
-		Focal_inf="$KIWI_RESULTS_DIR/$NAME/step1.meca.dat"
-		EQ_INFO="$KIWI_RESULTS_DIR/$NAME/step1.earthquakeinfo.dat"
-		INV="DC"
 	else
-		zenity --error --title="Error Dialog" --text="No inversion info file exists." --width=200 2> /dev/null && continue
+		echo -e "No inversion info file exists.\nYou must run a MT inversion to get a map." && continue
 	fi		
-	
-	awk '{print $1,$2}' $KIWI_RESULTS_DIR/$NAME/stations.table | sort -n | uniq > ./.stations.info
-	
+	echo -e "Drawing Event map.\nPlease wait ..."
 	STR=`awk '{print $4}' $Focal_inf`
 	DIP=`awk '{print $5}' $Focal_inf`
 	RAK=`awk '{print $6}' $Focal_inf`
+	
+	cat $KIWI_RESULTS_DIR/$NAME/stations.used | while read line; do
+		sta=`echo $line | cut -f 2 -d " "`
+		sla=`echo $line | cut -f 3 -d " "`
+		slo=`echo $line | cut -f 4 -d " "`
+		[ `grep -w -c "$sta" $KIWI_RESULTS_DIR/$NAME/stations.unused 2> /dev/null` -eq 3 ] 2> /dev/null && continue
+		echo "$sla $slo $sta"
+	done > .stations.info
+	
+	sed -i "/e =/c\e = model.Event(lat=$LAT, lon=$LON)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+	cat .stations.info | while read line; do
+		STNM=`echo $line | awk '{print $3}'`
+		STLA=`echo $line | awk '{print $1}'`
+		STLO=`echo $line | awk '{print $2}'`
+		sed -i "/s =/c\s = model.Event(lat=$STLA, lon=$STLO)" $PYROCKO/dist_azi_bazi.py 2> /dev/null
+		INFO=`python $PYROCKO/dist_azi_bazi.py`
+		DIST=`echo $INFO | awk '{print $1}'`
+		AZIM=`echo $INFO | awk '{print substr($2,2,6)}'`
+		(( `echo "$AZIM < 0" | bc -l` )) && AZIM=`echo "scale=2; 360 + $AZIM" | bc -l`
+		echo "$STNM $DIST $AZIM"
 		
-	LON_MAX=`cat ./.stations.info | awk '{print $2}' | sort -nr | head -1` 
-	LON_MAX=`round $LON_MAX 1`
-	LON_MIN=`cat ./.stations.info | awk '{print $2}' | sort -nr | tail -1`
-	LON_MIN=`round $LON_MIN 1`
-	LAT_MAX=`cat ./.stations.info | awk '{print $1}' | sort -nr | head -1` 
-	LAT_MAX=`round $LAT_MAX 1`
-	LAT_MIN=`cat ./.stations.info | awk '{print $1}' | sort -nr | tail -1` 
-	LAT_MIN=`round $LAT_MIN 1`
-	
-	read -a NUM <<< `grep -n "disaz" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | cut -f 1 -d :`
-	L1=`echo "${NUM[0]} + 1" | bc -l`
-	L2=`echo "${NUM[1]} - 1" | bc -l`
-	MAX_D=`sed -n "$L1,"$L2"p" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | awk '{print $9}' | sort -nr | head -1`
-	
-	if (( `echo "$MAX_D <= 800" | bc -l` )); then
-		LAT_I=2.5 ; LON_I=3.0 ; SCAL_SZ=150 
-	elif (( `echo "$MAX_D > 800" | bc -l` )) && (( `echo "$MAX_D <= 1400" | bc -l` )); then
-		LAT_I=4.0 ; LON_I=5.0 ; SCAL_SZ=200
-	else
-		LAT_I=4.0 ; LON_I=5.0 ; SCAL_SZ=250
-	fi		
-	
-	LON_MAX=`echo "$LON_MAX + $LON_I" | bc -l`
-	LON_MIN=`echo "$LON_MIN - $LON_I" | bc -l`
-	LAT_MAX=`echo "$LAT_MAX + $LAT_I" | bc -l`
-	LAT_MIN=`echo "$LAT_MIN - $LAT_I" | bc -l`
-		
-	SCALE_LON=`echo "$LON_MAX - ($LON_I / 3)" | bc -l`
-	SCALE_LAT=`echo "$LAT_MIN + ($LAT_I / 3)" | bc -l`
-	
+	done > .eve_st_azi_dis	
+
 	# Construct a Map
-	if [ "$MAKE_TOPO" = "yes" ]; then
-		[ ! -f $PLOT/$GRID_FILE ] && 
-			zenity --error --title="Error Dialog" --text="No gridded data available." --width=170 2> /dev/null && continue
-			
-		gmt grdcut $GRID_FILE -R"$LON_MIN"/"$LON_MAX"/"$LAT_MIN"/"$LAT_MAX" -G"$NAME".grd
-		gmt grdgradient "$NAME".grd -Ne0.8 -A90 -fg  -G"$NAME"_i.grd
-		gmt makecpt -C"$CPT" > topo.cpt
-		gmt grdimage "$NAME".grd -JM6i -I"$NAME"_i.grd -Ei"$MAP_DPI" -X1.5 -Y1.5 -Ba -C"$CPT" -K  > $NAME.ps
-		gmt pscoast -W0.5p,black -R -J -Dh -Na -L"$SCALE_LON"/"$SCALE_LAT"/"$LAT"/"$SCAL_SZ" -A3000 --MAP_TICK_PEN_PRIMARY=0.1c -O -K 2> /dev/null >> $NAME.ps		
-	else
-		gmt pscoast -W0.5p,black -R"$LON_MIN"/"$LON_MAX"/"$LAT_MIN"/"$LAT_MAX" -JM6i -Dh -Na -L"$SCALE_LON"/"$SCALE_LAT"/"$LAT"/"$SCAL_SZ" -A3000 \
-		--MAP_TICK_PEN_PRIMARY=0.1c -K -Ba -Na -Gwhite -Slightblue > $NAME.ps	
-	fi	
-				
-	gmt psxy -W0.1,black -R -J -i1,0 ./.stations.info -St0.17i -Gblack -K -O 2> /dev/null >> $NAME.ps
-	gmt psxy -W0.1,red -R -J -i0,1 -Sa0.2i -Gred -K -O 2> /dev/null <<- EOF >> $NAME.ps
+	
+	gmt pscoast -Rg -JG"$LON"/"$LAT"/5.7i -Dc -A5000 -K -Bag -Glightbrown -SDarkTurquoise > $NAME.ps			
+	gmt psxy -W0.1,black -R -J -i1,0 ./.stations.info -St0.16i -Gblack -K -O 2> /dev/null >> $NAME.ps	
+	gmt psxy -W0.5,red -R -J -i0,1 -Sa0.2i -Gred -K -O 2> /dev/null <<- EOF >> $NAME.ps	
 	$LON $LAT
 	EOF
-	
-	if [ "$INV" = "MT" ]; then
-		[ ! -f $PYROCKO/carthesian_to_latlon.py ] &&
-			zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 				
-		BootsT="$KIWI_RESULTS_DIR/$NAME/bootstrap.dat"
-		RN=`grep "REL LAT N" $BootsT | awk '{print $4}'`    # Rel Lat in km
-		RN=`echo "scale=2; $RN * 1000" | bc -l`          		# Rel Lat in m
-		RE=`grep "REL LON E" $BootsT | awk '{print $4}'`	  # Rel Lon in km
-		RE=`echo "$RE * 1000" | bc -l`     								  # Rel Lon in m
-		sed -i "/lat, lon =/c\lat, lon = orthodrome.ne_to_latlon($LAT, $LON, $RN, $RE)" $PYROCKO/carthesian_to_latlon.py 2> /dev/null
-		read -a CENTROID <<< `python $PYROCKO/carthesian_to_latlon.py`
-		CENT_LAT=`echo ${CENTROID[0]} | awk '{print substr($1,2,7)}'`
-		CENT_LON=`echo ${CENTROID[1]} | awk '{print substr($1,1,7)}'`
+	BootsT="$KIWI_RESULTS_DIR/$NAME/bootstrap.dat"
+	RN=`grep "REL LAT N" $BootsT | awk '{print $4}'`    # Rel Lat in km
+	RN=`echo "scale=2; $RN * 1000" | bc -l`          	# Rel Lat in m
+	RE=`grep "REL LON E" $BootsT | awk '{print $4}'`	# Rel Lon in km
+	RE=`echo "$RE * 1000" | bc -l`     					# Rel Lon in m
+	sed -i "/lat, lon =/c\lat, lon = orthodrome.ne_to_latlon($LAT, $LON, $RN, $RE)" $PYROCKO/carthesian_to_latlon.py 2> /dev/null
+	read -a CENTROID <<< `python $PYROCKO/carthesian_to_latlon.py`
+	CENT_LAT=`echo ${CENTROID[0]} | awk '{print substr($1,2,7)}'`
+	CENT_LON=`echo ${CENTROID[1]} | awk '{print substr($1,1,7)}'`
 		
-		gmt psxy -W0.1,green -R -J -i0,1 -Sa0.2i -Ggreen -K -O 2> /dev/null <<- EOF >> $NAME.ps
-		$CENT_LON $CENT_LAT
-		EOF
-	fi	
+	gmt psxy -W0.5,green -R -J -i0,1 -Sa0.2i -Ggreen -K -O 2> /dev/null <<- EOF >> $NAME.ps	
+	$CENT_LON $CENT_LAT
+	EOF
+
+	# Legend
+	gmt pslegend -R -J -F -DjBR+w2i/1.3i+jBL+l1.2+o3.5i/0i -C0.1i/0.1i -O -K <<- EOF >> $NAME.ps	
+	G -0.1i
+	H 14 Times-Roman Legend
+	G 0.0i
+	D 0.2i 1p
+	N 1
+	G 0.1i
+	S 0.1i a 0.16i red 0.25p,red 0.3i  Epicenter Loc
+	G 0.1i
+	S 0.1i a 0.16i green 0.25p,green 0.3i  Centroid Loc
+	G 0.1i	
+	S 0.1i t 0.16i black 0.25p 0.3i Station
+	G 0.1i
+	EOF
+
+	read -r -a AZI <<< `cat .eve_st_azi_dis | awk '{print $3}' | sort -n`
 	
-	if [ "$INV" = "MT" ]; then
-		# Legend
-		gmt pslegend -R -J -F -DjBR+w2i/1.3i+jBL+l1.2+o0.7i/0i -C0.1i/0.1i -O -K <<- EOF >> $NAME.ps
-		G -0.1i
-		H 14 Times-Roman Map Legend
-		G 0.0i
-		D 0.2i 1p
-		N 1
-		G 0.1i
-		S 0.1i a 0.16i red 0.25p,red 0.3i  Epicenter Loc
-		G 0.1i
-		S 0.1i a 0.16i green 0.25p,green 0.3i  Centroid Loc
-		G 0.1i	
-		S 0.1i t 0.16i black 0.25p 0.3i Station
-		G 0.1i
-		EOF
-	else
-		# Legend
-		gmt pslegend -R -J -F -DjBR+w2i/1i+jBL+l1.2+o0.7i/0i -C0.1i/0.1i -O -K <<- EOF >> $NAME.ps
-		G -0.1i
-		H 14 Times-Roman Map Legend
-		G 0.0i
-		D 0.2i 1p
-		N 1
-		G 0.1i
-		S 0.1i a 0.16i red 0.25p,red 0.3i  Epicenter Loc
-		G 0.1i	
-		S 0.1i t 0.16i black 0.25p 0.3i Station
-		G 0.1i
-		EOF
-	fi
-	
-	read -r -a AZI <<< `sed -n "$L1,"$L2"p" $KIWI_RESULTS_DIR/$NAME/step1.ptsolution.gmt | awk '{print $10}' | sort -nr | uniq`
 	NUM_ST=${#AZI[@]}
 	for ((i=0; i < $((NUM_ST - 1)); i+=1 )); do 
-		DIFF[$i]=`echo "scale=2; ${AZI[$i]} - ${AZI[$i+1]}" | bc -l`
+		DIFF[$i]=`echo "scale=2; ${AZI[$i+1]} - ${AZI[$i]}" | bc -l`
 	done
-	DIFF+=(`echo "scale=2; (360 - ${AZI[0]}) + ${AZI[((NUM_ST-1))]}" | bc -l`)
+	DIFF+=(`echo "scale=2; (360 - ${AZI[((NUM_ST-1))]} + ${AZI[0]})" | bc -l`)
 	FIRST_G=`echo ${DIFF[@]} | tr " " "\n" | sort -nr | head -1`	
 	
-	if [ "$INV" = "DC" ]; then
-		sed -i 's/N//' $Focal_inf 
-		S1=`grep "3 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		D1=`grep "3 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		R1=`grep "3 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		S2=`grep "5 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		D2=`grep "5 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		R2=`grep "5 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		S3=`grep "7 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		D3=`grep "7 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		R3=`grep "7 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		S4=`grep "9 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		D4=`grep "9 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		R4=`grep "9 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
-		M0=`grep "3 12 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
-		Mw=`grep "3 11 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`	
-		DP=`grep "3 10 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
-		MF=`grep "3 8 10 0 0 5" $EQ_INFO  | cut -f 7 -d " "`	
-		BP=`grep "3 3 10 0 0 5" $EQ_INFO  | cut -f 7- -d " "`	
-				
-		gmt pstext -X17 -Y9 -JX10/6 -R0/14/0/21 -K -O 2> /dev/null <<- EOF >> $NAME.ps	
-		0 18 13 0 0 5 Epicenter 
-		3 18 13 0 0 5 $LAT N $LON E
-		0 16 13 0 0 5 Strike
-		0 14 13 0 0 5 Dip
-		0 12 13 0 0 5 Rake
-		3 16 13 0 0 5 $S1
-		3 14 13 0 0 5 $D1
-		3 12 13 0 0 5 $R1	
-		5 16 13 0 0 5 $S2
-		5 14 13 0 0 5 $D2
-		5 12 13 0 0 5 $R2	
-		7 16 13 0 0 5 $S3
-		7 14 13 0 0 5 $D3
-		7 12 13 0 0 5 $R3	
-		9 16 13 0 0 5 $S4
-		9 14 13 0 0 5 $D4
-		9 12 13 0 0 5 $R4	
-		0 10 13 0 0 5 M@-0@-
-		3 10 13 0 0 5 $M0
-		0 08 13 0 0 5 M@-w@-
-		3 08 13 0 0 5 $Mw
-		0 06 13 0 0 5 Depth
-		3 06 13 0 0 5 $DP
-		0 04 13 0 0 5 DC Misfit
-		3 04 13 0 0 5 $MF
-		0 02 13 0 0 5 BP Used
-		3 02 13 0 0 5 $BP
-		EOF
-		gmt psmeca $Focal_inf -W1,black -JX3/3 -R-1/1/-1/1 -Sa11,black -T0 -X0.1 -Y-2.8 -K -O 2> /dev/null >> $NAME.ps
-		gmt pstext -W.0.2,black -C0.2c/0.2c -Y8.4.5 -X-18 -JX8/3 -R-1/8/-1/2 -K -O 2> /dev/null <<- EOF >> $NAME.ps
-		0 00 11 0 0 5 Gap = $FIRST_G deg
-		0 0.7 11 0 0 5 No. St = $NUM_ST
-		EOF
-		
-	else
+	MF1=`grep "3 8 10 0 0 5" $KIWI_RESULTS_DIR/$NAME/step1.earthquakeinfo.dat | cut -f 7 -d " "`
+	sed -i 's/N//' $Focal_inf 
+	S1=`grep "3 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+	D1=`grep "3 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+	R1=`grep "3 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+	S2=`grep "5 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+	D2=`grep "5 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
+	R2=`grep "5 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`	
+	M0=`grep "3 12 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
+	Mw=`grep "3 11 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`	
+	DP=`grep "3 10 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
+	MF=`grep "3 8 10 0 0 5" $EQ_INFO  | cut -f 7 -d " "`			
+	BP=`grep "3 3 10 0 0 5" $EQ_INFO  | cut -f 7- -d " "`	
+	RN=`grep "REL LAT N" $BootsT | awk '{print $4}'`
+	RE=`grep "REL LON E" $BootsT | awk '{print $4}'`
+	RT=`grep "REL TIME"  $BootsT | awk '{print $3}'`
+	(( `echo "$RN < 0" | bc -l` )) && RNM=S && RN=`echo "$RN * -1" | bc -l` || RNM=N
+	(( `echo "$RE < 0" | bc -l` )) && REM=W && RE=`echo "$RE * -1" | bc -l` || REM=E
 	
-		MF1=`grep "3 8 10 0 0 5" $KIWI_RESULTS_DIR/$NAME/step1.earthquakeinfo.dat | cut -f 7 -d " "`
-		BootsT="$KIWI_RESULTS_DIR/$NAME/bootstrap.dat"
-		sed -i 's/N//' $Focal_inf 
-		S1=`grep "3 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		D1=`grep "3 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		R1=`grep "3 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		S2=`grep "5 15 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		D2=`grep "5 14 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`
-		R2=`grep "5 13 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`	
-		M0=`grep "3 12 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
-		Mw=`grep "3 11 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`	
-		DP=`grep "3 10 10 0 0 5" $EQ_INFO | cut -f 7 -d " "`		
-		MF=`grep "3 8 10 0 0 5" $EQ_INFO  | cut -f 7 -d " "`			
-		BP=`grep "3 3 10 0 0 5" $EQ_INFO  | cut -f 7- -d " "`	
-		RN=`grep "REL LAT N" $BootsT | awk '{print $4}'`
-		RE=`grep "REL LON E" $BootsT | awk '{print $4}'`
-		RT=`grep "REL TIME"  $BootsT | awk '{print $3}'`
-		(( `echo "$RN < 0" | bc -l` )) && RNM=S && RN=`echo "$RN * -1" | bc -l` || RNM=N
-		(( `echo "$RE < 0" | bc -l` )) && REM=W && RE=`echo "$RE * -1" | bc -l` || REM=E
 		
-		gmt pstext -X17 -Y7.5 -JX10/7 -R0/14/0/32 -K -O 2> /dev/null <<- END >> $NAME.ps	
-		0 30 13 0 0 5 Epicenter 
-		3 30 13 0 0 5 $LAT N $LON E
-		0 28 13 0 0 5 Moment Tensor Solutions:
-		0 26 13 0 0 5 Strike
-		0 24 13 0 0 5 Dip
-		0 22 13 0 0 5 Rake
-		3 26 13 0 0 5 $S1
-		3 24 13 0 0 5 $D1
-		3 22 13 0 0 5 $R1	
-		5 26 13 0 0 5 $S2
-		5 24 13 0 0 5 $D2
-		5 22 13 0 0 5 $R2	
-		0 20 13 0 0 5 M@-0@-
-		3 20 13 0 0 5 $M0
-		0 18 13 0 0 5 M@-w@-
-		3 18 13 0 0 5 $Mw
-		0 16 13 0 0 5 Depth
-		3 16 13 0 0 5 $DP
-		0 14 13 0 0 5 DC Misfit
-		3 14 13 0 0 5 $MF1
-		0 12 13 0 0 5 Rel Lon 
-		3 12 13 0 0 5 $RE km $REM 
-		0 10 13 0 0 5 Rel Lat 
-		3 10 13 0 0 5 $RN km $RNM 
-		0 08 13 0 0 5 Rel Time
-		3 08 13 0 0 5 $RT s			
-		0 06 13 0 0 5 MT Misfit
-		3 06 13 0 0 5 $MF			
-		0 04 13 0 0 5 BP Used
-		3 04 13 0 0 5 $BP					
-		END
+	gmt pstext -X16.2 -Y6.0 -JX10/7 -R0/14/0/32 -K -O 2> /dev/null <<- END >> $NAME.ps	
+	0 30 13 0 0 5 Epicenter 
+	3 30 13 0 0 5 $LAT N $LON E
+	0 28 13 0 0 5 Moment Tensor Solutions:
+	0 26 13 0 0 5 Strike
+	0 24 13 0 0 5 Dip
+	0 22 13 0 0 5 Rake
+	3 26 13 0 0 5 $S1
+	3 24 13 0 0 5 $D1
+	3 22 13 0 0 5 $R1	
+	5 26 13 0 0 5 $S2
+	5 24 13 0 0 5 $D2
+	5 22 13 0 0 5 $R2	
+	0 20 13 0 0 5 M@-0@-
+	3 20 13 0 0 5 $M0
+	0 18 13 0 0 5 M@-w@-
+	3 18 13 0 0 5 $Mw
+	0 16 13 0 0 5 Depth
+	3 16 13 0 0 5 $DP
+	0 14 13 0 0 5 DC Misfit
+	3 14 13 0 0 5 $MF1
+	0 12 13 0 0 5 Rel Lon 
+	3 12 13 0 0 5 $RE km $REM 
+	0 10 13 0 0 5 Rel Lat 
+	3 10 13 0 0 5 $RN km $RNM 
+	0 08 13 0 0 5 Rel Time
+	3 08 13 0 0 5 $RT s			
+	0 06 13 0 0 5 MT Misfit
+	3 06 13 0 0 5 $MF			
+	0 04 13 0 0 5 BP Used
+	3 04 13 0 0 5 $BP					
+	END
 
-		gmt psmeca $Focal_inf -W1,black -JX3/3 -R-1/1/-1/1 -Sa11,black -Gblack -X0.1 -Y-2.8 -K -O 2> /dev/null >> $NAME.ps
+	gmt psmeca $Focal_inf -W1,black -JX3/3 -R-1/1/-1/1 -Sa11,black -Gblack -X5.2 -Y3.7 -K -O 2> /dev/null >> $NAME.ps		
 		
-		gmt pstext -W.0.2,black -C0.2c/0.2c -Y10 -X-18 -JX8/3 -R-1/8/-1/2 -K -O <<- EOF >> $NAME.ps
-		0 00 11 0 0 5 Gap = $FIRST_G deg
-		EOF
-	
-	fi
-		
+	gmt pstext -W.0.2,black -C0.2c/0.2c -Y5.2 -X-21 -JX8/3 -R-1/8/-1/2 -K -O <<- EOF >> $NAME.ps	
+	0 00 11 0 0 5 Gap = $FIRST_G deg
+	EOF
+	gmt pstext -W.0.2,black -C0.2c/0.2c -Y-0.9 -X0 -JX8/3 -R-1/8/-1/2 -K -O <<- EOF >> $NAME.ps	
+	0 00 11 0 0 5 Station.No = $NUM_ST
+	EOF
 	rm ./gmt.history 2> /dev/null
 	$IMAGE_V $PLOT/$NAME.ps 2> /dev/null
 }	
@@ -902,7 +689,7 @@ DATA_QUERY ()
 	[ ! -f $PYROCKO/catalog_search.py ] &&
 		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 
-	zenity --question --title="Query Criteria" --text="Load the last query criteria?" 2> /dev/null; ASK="$?"
+	zenity --question --title="Query Criteria" --text="Load the last query criteria?" --width=200 2> /dev/null; ASK="$?"
 	
 	if [ "$ASK" -eq "1" ]; then
 	
@@ -942,7 +729,7 @@ DATA_QUERY ()
 	ev_num=`grep -c 'pf.Event' ./.events.info`
 	
 	[ "$ev_num" -eq "0" ] && 
-		zenity --error --title="Query Error" --text="Your event not found." --width=180 2> /dev/null && continue
+		zenity --error --title="Query Error" --text="Your event not found." --width=170 2> /dev/null && continue
 	
 	if [ "$ev_num" -eq "1" ]; then
 		TM=`grep "time" ./.events.info | cut -f 3 -d " "` 
@@ -950,7 +737,7 @@ DATA_QUERY ()
 		NM=`grep "region" ./.events.info | cut -f 2- -d " "`
 		
 		SITE="geofon,iris,orfeus"
-		rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
+		$KIWI_WORK_DIR/rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
 	
 	else	
 	
@@ -970,7 +757,7 @@ DATA_QUERY ()
 		done
 		
 		EVE=$(zenity --list --text="Select the event within the following list ..." --checklist --column "Pick" \
-				--column "List" "${LIS[@]}" --separator=" " --width=830 --height=200 2> /dev/null)
+				--column "List" "${LIS[@]}" --separator=" " --width=950 --height=250 2> /dev/null)
 
 		if [ -n "$EVE" ]; then
 			DT=`echo $EVE | awk '{print $1}' | cut -f 2 -d =`
@@ -978,7 +765,7 @@ DATA_QUERY ()
 			NM=`echo $EVE | awk '{print $7}' | cut -f 2- -d "="`
 		
 			SITE="geofon,iris,orfeus"
-			rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
+			$KIWI_WORK_DIR/rapidown --force --continue --window=full --debug --sites="$SITE" --out-components=$D_ON $DT $TM $RADS $M_FQ $S_RT "$NM" 
 		else
 			zenity --error --title="Error Dialog" --text="Process canceled." --width=150 2> /dev/null && continue
 		fi	
@@ -992,16 +779,17 @@ TIME_SHIFT ()
 	[ ! -f $PYROCKO/time_shift.py ] &&
 		zenity --error --title="Error Dialog" --text="The corresponding pyrocko module is missing." --width=260 2> /dev/null && continue
 		
-	[ -z "`ls -p | grep -v /  2> /dev/null`" ] &&
+	[ ! "`ls -p | grep -v /  2> /dev/null`" ] &&
 		zenity --error --title="Error Dialog" --text="No data available to process." --width=200 2> /dev/null && continue
 		
 	TIME=`zenity --title="Time Shift Scale" --scale --text="Select a time shift in second" --value=1 \
-		--min-value=-50 --max-value=50 --step=1 2> /dev/null`
+		--min-value=-100 --max-value=100 --step=1 2> /dev/null`
 	[ -z "$TIME" ] && continue
 	
 	sed -i "/tr.shift/c\tr.shift ($TIME)" $PYROCKO/time_shift.py
 	
 	for data in `ls -p | grep -v /`; do
+		echo "Processing $data"
 		sed -i "/trace =/c\trace = io.load('$data')" $PYROCKO/time_shift.py 
 		sed -i "/io.save/c\io.save (tr, 'SH.$data')" $PYROCKO/time_shift.py 
 		python $PYROCKO/time_shift.py
@@ -1025,7 +813,7 @@ MAG_2_MOM ()
 	sed -i "3s/.*/magnitude = $Mag/" $PYROCKO/mag_to_mom.py 2> /dev/null
 	
 	Mom=`python $PYROCKO/mag_to_mom.py`
-	zenity --info --title="Result Dialog" --text="Conversion resul is:\n$Mom [Nm]" --width=200 2> /dev/null
+	zenity --info --title="Result Dialog" --text="Conversion result is:\n$Mom [Nm]" --width=200 2> /dev/null
 }
 
 
@@ -1038,13 +826,13 @@ SYNTHETIC ()
 	[ ! -f ./stations.info ] &&
 		zenity --error --title="Info Error" --text="No station info file available." --width=190 2> /dev/null && continue
 		
-	zenity --question --title="Question Dialog" --text="Load the last imported event info?" 2> /dev/null; ASK="$?"
+	zenity --question --title="Question Dialog" --text="Load the last imported event info?" --width=260 2> /dev/null; ASK="$?"
 	
 	if [ "$ASK" -eq "1" ]; then
 	
 		read -a INFO <<< `zenity --forms --title="Event Info" --text="Please complete the following fields." --separator=" " \
 			--add-entry="Event Latitude (deg)" --add-entry="Event Longitude (deg)" --add-entry="Event Depth (km)" \
-			--add-entry="Event Magnitude" --add-entry="Strike-Dip-Rake (deg)" --add-entry="GFDB ID" 2> /dev/null`
+			--add-entry="Event Magnitude" --add-entry="Strike/Dip/Rake (deg)" --add-entry="GFDB ID" 2> /dev/null`
 		
 		[ "${#INFO[@]}" -ne "6" ] && 
 			zenity --error --title="Info Error" --text="Process Canceled." --width=140 2> /dev/null && continue
@@ -1055,15 +843,16 @@ SYNTHETIC ()
 		echo MAG=`echo ${INFO[@]} | cut -f 4 -d " "` >> ./.event.info
 		echo GID=`echo ${INFO[@]} | cut -f 6 -d " "` >> ./.event.info	
 		SOC=`echo ${INFO[@]} | cut -f 5 -d " " ` 
-		echo STR=`echo $SOC | cut -f 1 -d "-"` >> ./.event.info
-		echo DIP=`echo $SOC | cut -f 2 -d "-"` >> ./.event.info
-		echo RAK=`echo $SOC | cut -f 3 -d "-"` >> ./.event.info		
+		echo STR=`echo $SOC | cut -f 1 -d "/"` >> ./.event.info
+		echo DIP=`echo $SOC | cut -f 2 -d "/"` >> ./.event.info
+		echo RAK=`echo $SOC | cut -f 3 -d "/"` >> ./.event.info		
 		. ./.event.info
 	
 	else
-		NUM_LINE=`grep -c "=" ./.event.info`
-		NUM_VALS=`grep -ic "=[^ ]" ./.event.info`
-		[ \( ! -f ./.event.info \) -o \( "$NUM_LINE" -ne "$NUM_VALS" \) ] &&
+		[ ! -f ./.event.info ] && zenity --error --title="Info Error" --text="No event info file exists." --width=190 2> /dev/null && continue
+		NUM_LINE=`grep -c "=" ./.event.info 2> /dev/null`
+		NUM_VALS=`grep -ic "=[^ ]" ./.event.info 2> /dev/null`
+		[ "$NUM_LINE" -ne "$NUM_VALS" ] &&
 			zenity --error --title="Info Error" --text="Event info file is incomplete." --width=190 2> /dev/null && continue
 		
 		. ./.event.info
@@ -1079,6 +868,7 @@ SYNTHETIC ()
 	sed -i "33s/.*/    dip=$DIP,/"       $PYROCKO/synthetics.py 2> /dev/null 
 	sed -i "34s/.*/    rake=$RAK,/"      $PYROCKO/synthetics.py 2> /dev/null 
 	sed -i "35s/.*/    magnitude=$MAG)/" $PYROCKO/synthetics.py 2> /dev/null 
+	sed -i "/store_id =/c\store_id = \'$GID\'"  $PYROCKO/synthetics.py 2> /dev/null 
 	sed -i '/^$/d' ./stations.info 2> /dev/null 
 	
 	while read line; do
@@ -1094,22 +884,21 @@ SYNTHETIC ()
 		
 	done < ./stations.info
 	
-	for data in `ls *mseed`; do mseed2sac $data 2> /dev/null 1>&2; done
-	for data in `ls .*SAC`; do mv $data ${data#*.}; done
+	jackseis ./*mseed --output-dir=./ --output-format="sac"
 		
 	mkdir SAC_Data MSEED_Data 2> /dev/null
-	[ \( -n "$(ls SAC_Data/*SAC 2> /dev/null)" \) -o \( -n "$(ls MSEED_Data/*mseed 2> /dev/null)" \) ] &&
+	[[ `ls SAC_Data/*sac 2> /dev/null` ]] || [[ `ls MSEED_Data/*mseed 2> /dev/null` ]] &&
 		zenity --question --title="Data Removal" --text="Remove the previous processed data?" --width=250 2> /dev/null; ANS="$?"
 	
 	if [ "$ANS" -eq "0" ]; then rm -f SAC_Data/* 2> /dev/null; rm -f MSEED_Data/* 2> /dev/null; fi
-	mv ./*SAC SAC_Data; mv ./*mseed MSEED_Data
+	mv ./*sac SAC_Data; mv ./*mseed MSEED_Data
 }
 
 
 STATION_BEACH_B ()
 {
-	[ ! -d $PLOT/ST_2_FOCAL ] &&
-		zenity --error --title="Error Dialog" --text="PLOT/ST_2_FOCAL directory is missing." --width=270 2> /dev/null && continue
+	[ ! -f $PLOT/ST_2_FOCAL/stations.dat ] &&
+		zenity --error --title="Error Dialog" --text="PLOT/ST_2_FOCAL/stations.dat is missing." --width=290 2> /dev/null && continue
 		
 	cd $PLOT/ST_2_FOCAL
 	[ ! -f $PYROCKO/station_beachball.py ] &&
@@ -1148,6 +937,7 @@ STATION_BEACH_B ()
 	while read line; do
 		SLA=`echo $line | awk '{print $1}'`
 		SLO=`echo $line | awk '{print $2}'`
+		echo "$SLA $SLO"
 		STINFO+=("($SLA, $SLO), ")
 	done < ./stations.dat
 	
@@ -1178,9 +968,7 @@ GCMT_SEARCH ()
 	LO2=`echo ${MENU[@]} | cut -f 5 -d " " | cut -f 2 -d "/"`
 	MAG=`echo ${MENU[@]} | cut -f 6 -d " "`
 	NAM=`echo ${MENU[@]} | cut -f 7 -d " "`
-	
-	${DAT:=`date +%Y-%m-%d`} 2> /dev/null
-	
+		
 	[ "${#MENU[@]}" -ne "7" ] &&
 		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 	sed -i "/tmin =/c\tmin = util.str_to_time ('$DAT $STM')" $PYROCKO/search_globalcmt.py 2> /dev/null 
@@ -1217,9 +1005,7 @@ GFZ_SEARCH ()
 	ETM=`echo ${MENU[@]} | cut -f 3 -d " "`
 	MAG=`echo ${MENU[@]} | cut -f 4 -d " "`
 	NAM=`echo ${MENU[@]} | cut -f 5 -d " "`
-	
-	${DAT:=`date +%Y-%m-%d`} 2> /dev/null
-	
+		
 	[ "${#MENU[@]}" -ne "5" ] &&
 		zenity --error --title="Error Dialog" --text="Process canceled." --width=130 2> /dev/null && continue
 	
@@ -1345,8 +1131,9 @@ Yfile2SAC ()
 	IR
 	180
 	EOF
-	mv `ls -S | head -1` $INPUT; cd $INPUT
-	jackseis ./`ls -S | head -1` --output-dir=./ --output-format="sac" 
+	mv `ls -S | head -1` $INPUT
+	cd $INPUT
+	jackseis ./`ls -S | head -1` --output-dir=./ --output-format="sac" --output="trace.%s.%c.%b.%e.sac"
 	[ ! -d ./Mseed ] && mkdir Mseed 
 	mv `ls -S | head -1` Mseed
 }		
@@ -1359,7 +1146,7 @@ AUTO_SET_KIWI_PARAM ()
 	n_x=`gfdb_info $GF_DIR/$GF_NM | grep "nx" | cut -f 2 -d = | head  -1`
 	x_d=`gfdb_info $GF_DIR/$GF_NM | grep "dx" | cut -f 2 -d =`
 	f_x=`gfdb_info $GF_DIR/$GF_NM | grep "firstx" | cut -f 2 -d =`
-	MAX_DIS=`echo "scale=2; ($f_x / 1000) + ($n_x * $x_d) / 1000" | bc -l`
+	MAX_DIST=`echo "scale=2; ($f_x / 1000) + ($n_x * $x_d) / 1000" | bc -l`
 	MIN_DIS=`echo "scale=2; $f_x / 1000" | bc -l`
 	n_z=`gfdb_info $GF_DIR/$GF_NM | grep "nz" | cut -f 2 -d =`
 	z_d=`gfdb_info $GF_DIR/$GF_NM | grep "dz" | cut -f 2 -d =`
@@ -1372,6 +1159,7 @@ AUTO_SET_KIWI_PARAM ()
 				F1=(0.05 0.05 0.08 0.08)
 				F2=(0.05 0.05 0.08 0.08)
 				F3=(0.05 0.05 0.45 0.45)
+				MAX_DIS=300
 				NE=20000; NES=3000
 				T=5; TS=0.5 ; CC=5
 				W_S=0.2; W_T=0.1
@@ -1381,6 +1169,7 @@ AUTO_SET_KIWI_PARAM ()
 				F1=(0.04 0.04 0.07 0.07)
 				F2=(0.04 0.04 0.07 0.07)
 				F3=(0.04 0.04 0.35 0.35)
+				MAX_DIS=400
 				NE=25000; NES=3000
 				T=5; TS=0.5; CC=5
 				W_S=0.2; W_T=0.1
@@ -1390,6 +1179,7 @@ AUTO_SET_KIWI_PARAM ()
 				F1=(0.03 0.03 0.06 0.06)
 				F2=(0.03 0.03 0.06 0.06)
 				F3=(0.03 0.03 0.25 0.25)
+				MAX_DIS=500
 				NE=30000; NES=4000
 				T=8; TS=0.5; CC=5
 				W_S=0.2; W_T=0.1	
@@ -1399,6 +1189,7 @@ AUTO_SET_KIWI_PARAM ()
 				F1=(0.02 0.02 0.05 0.05)
 				F2=(0.02 0.02 0.05 0.05)
 				F3=(0.02 0.02 0.20 0.20)
+				MAX_DIS=800
 				NE=35000; NES=4000
 				T=10; TS=0.5; CC=5
 				W_S=0.15; W_T=0.05		
@@ -1408,6 +1199,7 @@ AUTO_SET_KIWI_PARAM ()
 				F1=(0.01 0.01 0.04 0.04)
 				F2=(0.01 0.01 0.04 0.04)
 				F3=(0.01 0.01 0.10 0.10)
+				MAX_DIS=1000
 				NE=45000; NES=6000
 				T=15; TS=0.5; CC=5
 				W_S=0.1; W_T=0.05	
@@ -1417,12 +1209,14 @@ AUTO_SET_KIWI_PARAM ()
 				F1=(0.005 0.005 0.02 0.02)
 				F2=(0.005 0.005 0.02 0.02)
 				F3=(0.005 0.005 0.05 0.05)
+				MAX_DIS=1200
 				NE=60000; NES=8000
 				T=25; TS=0.5; CC=5
 				W_S=0.05; W_T=0.01	
 				SCA_M1="1e19"; SCA_M2="5e20"; SCA_MS="1e19"										
 				;;
 	esac	
+	(( `echo "scale=2; $MAX_DIS >= $MAX_DIST" | bc -l` )) && MAX_DIS="$MAX_DIST"
 }
 
 
@@ -1518,11 +1312,25 @@ KIWI_STEP3 ()
 
 AUTO_ANALYSIS ()
 {
-	[ \( ! -d $KIWI_DATA_DIR/$NAME \) -o \( -z "$(ls $KIWI_DATA_DIR/$NAME/DISPL* 2> /dev/null)" \) ] &&  
+
+	[[ ! `ls $KIWI_DATA_DIR/$NAME/DISPL* 2> /dev/null` ]] && \
 		zenity --error --title "Data Error" --text="No data available to process." --width=200  2> /dev/null && continue
 	
-	[ ! -f $KIWI_DATA_DIR/$NAME/stations.dat ] && cat $DPSA_HOME/.stations.dat | awk '{print $1,$2,$3,$4}' > $KIWI_DATA_DIR/$NAME/stations.dat
-	
+	if [ ! -f $KIWI_DATA_DIR/$NAME/stations.dat ]; then
+		cd $KIWI_DATA_DIR/$NAME
+		rm .marked 2> /dev/null
+		i=0
+		for data in `ls DISPL*`; do
+			ST=`echo $data | cut -f 2 -d "."`
+			[ `grep $ST .marked 2> /dev/null` ] && continue
+			i=$((i+1))
+			STLA=`grep -w $ST $DPSA_HOME/.stations.dat | awk '{print $3}'`
+			STLO=`grep -w $ST $DPSA_HOME/.stations.dat | awk '{print $4}'`
+			echo $data >> .marked
+			echo $i $ST $STLA $STLO
+		done > stations.dat
+		cd -
+	fi
 	GF_DIR=`zenity --file-selection --title="Please set the path to your Greens Functions directory" --directory 2> /dev/null`
 	[ -z $GF_DIR ] && continue
 	
@@ -1597,29 +1405,9 @@ BUILD_TREE
 trap 'echo "Operation Not Allowed!"' INT TERM
 XXE="$CHAN"E; XXN="$CHAN"N; XXZ="$CHAN"Z; XXR="$CHAN"R; XXT="$CHAN"T
 
-while getopts "a" options; do
-	case "$options" in
-		a)
-			[ ! -f $EVE_INFO ] && 
-				zenity --error --title="Error Dialog" --text="No Event info file available" --width=190 2> /dev/null && continue		
-					
-			INF_CHECK=`grep -ic "=[^ ]" $EVE_INFO`
-			[ "$INF_CHECK" -ne "14" ] && 
-				zenity --error --title="Error Dialog" --text="Event info is incomplete" --height=100 2> /dev/null && continue		
-		
-			> $LOG_FILE
-			. $EVE_INFO
-		        DATA_ANALYSIS
-			DECO_DECI	
-			DATA_TYPE	
-			AUTO_ANALYSIS
-			exit 0
-		esac
-done			
-
 
 while true; do    # Make it possible to return to the main menu from submenu
-	MAIN=`zenity --title="DPSA Main Menu" --text="Please select a task" --height=300 --width=300 --print-column="2" --column="Num" \
+	MAIN=`zenity --title="DPSA Main Menu" --text="Please select a task" --height=310 --width=300 --print-column="2" --column="Num" \
 		--column="Task" --list "1" "Data Query" "2" "Data Proccessing" "3" "Quick Source Study" "4" "Pyrocko Toolbox" "5" "Complete Event Info" "6" "Open Config File" \
 		"7" "Exit" 2> /dev/null`
 		
@@ -1662,7 +1450,7 @@ while true; do    # Make it possible to return to the main menu from submenu
 			"Data Proccessing")
 					while true; do
 						. $CONF_FILE 
-						SUB1=`zenity --title="Data Processing" --text="Please select a task" --height=320 --width=290 --print-column="2" \
+						SUB1=`zenity --title="Data Processing" --text="Please select a task" --height=330 --width=290 --print-column="2" \
 						--column="Num" --column="Task" --list "1" "Process a set of raw Data" "2" "Shift a set of mseed sata" \
 						"3" "Merge a set of sac data" "4" "Convert Y-file to SAC" "5" "Open event info file" "6" "Open event log file" "7" "Go to main menu" "8" "Exit" 2> /dev/null`
 						
@@ -1817,9 +1605,9 @@ while true; do    # Make it possible to return to the main menu from submenu
 									MAG_2_MOM
 									continue ;;										
 									
-								"Azimuthal Gap")
+								"Azimuthal Gap Info")
 									. $EVE_INFO
-									GAP
+									GAP_INFO
 									continue ;;																	
 																			
 								"Go to Main Menu")
@@ -1849,7 +1637,7 @@ while true; do    # Make it possible to return to the main menu from submenu
 		esac		
 		
 	elif [ $A1 -eq 1 ]; then
-		 continue
+		 break 1
 	else
 		zenity --error --title="Error Dialog" --text="Something Went Wrong!" --width=190 2> /dev/null && break 1
 	fi	
